@@ -38,7 +38,7 @@ android {
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    api(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 
     // AndroidX & Kotlin
     implementation(libs.androidx.core.ktx)
@@ -53,11 +53,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
 
     // Huawei HMS base dependencies required by ScanKit core
-    implementation("com.huawei.hms:dynamic-api:1.0.25.300")
-    implementation("com.huawei.hmf:tasks:1.5.2.301")
-    implementation("com.huawei.hms:ml-computer-sdkbase-inner:3.11.0.301")
-    implementation("com.huawei.agconnect:agconnect-core:1.9.4.300")
-    implementation("com.huawei.hms:hatool:6.13.0.303")
-    implementation("com.huawei.hms:network-grs:8.0.1.316")
-    implementation("com.huawei.hms:network-embedded:8.0.1.316")
+    api("com.huawei.hms:dynamic-api:1.0.25.300")
+    api("com.huawei.hmf:tasks:1.5.2.301")
+    api("com.huawei.hms:ml-computer-sdkbase-inner:3.11.0.301")
+    api("com.huawei.agconnect:agconnect-core:1.9.4.300")
+    api("com.huawei.hms:hatool:6.13.0.303")
+    api("com.huawei.hms:network-grs:8.0.1.316")
+    api("com.huawei.hms:network-embedded:8.0.1.316")
 }
