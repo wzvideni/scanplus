@@ -56,7 +56,7 @@ class j0(
     private var textureView: TextureView? = null
 
     private val camera2Manager: Camera2Manager by lazy {
-        val facing = if (e0Var.b() == 1) {
+        val facing = if (e0Var.c() == 1 || e0Var.b() == 1) {
             CameraCharacteristics.LENS_FACING_FRONT
         } else {
             CameraCharacteristics.LENS_FACING_BACK
@@ -64,7 +64,9 @@ class j0(
         Camera2Manager(context, facing).apply {
             onCameraOpened = {
                 synchronized(this@j0) {
-                    currentState = b.CAMERA_OPENED
+                    if (currentState == b.CAMERA_CLOSED) {
+                        currentState = b.CAMERA_OPENED
+                    }
                     statusListener?.a()
                 }
             }
@@ -96,7 +98,9 @@ class j0(
         if (currentState == b.CAMERA_CLOSED || currentState == b.PREVIEW_STOPPED) {
             try {
                 camera2Manager.openCamera()
-                currentState = b.CAMERA_OPENED
+                if (currentState.b() < b.CAMERA_OPENED.b()) {
+                    currentState = b.CAMERA_OPENED
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Camera2 open failed: ${e.message}", e)
                 statusListener?.b()
@@ -111,7 +115,6 @@ class j0(
             if (currentState.b() == b.PREVIEW_STARTED.b()) {
                 a()
                 q()
-                currentState = b.PREVIEW_STOPPED
             }
             if (h() == "torch") {
                 a("off")
@@ -154,10 +157,7 @@ class j0(
     @Synchronized
     fun p() {
         try {
-            if (currentState.b() < b.CAMERA_INITIALED.b()) {
-                Log.w(TAG, "startPreview: camera not initialized yet")
-                return
-            }
+            Log.i(TAG, "startPreview invoked, currentState=$currentState")
             camera2Manager.startPreview()
             currentState = b.PREVIEW_STARTED
         } catch (e: Exception) {
@@ -168,10 +168,6 @@ class j0(
     @Synchronized
     fun q() {
         try {
-            if (currentState.b() < b.PREVIEW_STARTED.b()) {
-                Log.w(TAG, "stopPreview: preview not started yet")
-                return
-            }
             camera2Manager.stopPreview()
             currentState = b.PREVIEW_STOPPED
         } catch (e: Exception) {
@@ -181,7 +177,7 @@ class j0(
 
     @Synchronized
     fun o() {
-        // Frame request trigger - in Camera2 frames stream automatically via ImageReader
+        // Frame request trigger - in Camera2 frames stream continuously via ImageReader
     }
 
     @Synchronized
@@ -194,7 +190,7 @@ class j0(
 
     @Synchronized
     fun n() {
-        // Dummy callback - frame stream paused
+        // Dummy callback - legacy Camera1 buffer allocation
     }
 
     @Synchronized
@@ -247,9 +243,12 @@ class j0(
     @Synchronized
     fun a(textureView: TextureView?) {
         requireNotNull(textureView) { "TextureView must not be null" }
+        Log.i(TAG, "attachTextureView invoked, currentState=$currentState")
         this.textureView = textureView
         camera2Manager.attachTextureView(textureView)
-        currentState = b.CAMERA_INITIALED
+        if (currentState.b() < b.CAMERA_INITIALED.b()) {
+            currentState = b.CAMERA_INITIALED
+        }
     }
 
     @Synchronized

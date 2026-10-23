@@ -63,6 +63,7 @@ class Camera2ScanManager(
      */
     fun start() {
         camera2Manager.openCamera()
+        camera2Manager.startPreview()
     }
 
     /**
