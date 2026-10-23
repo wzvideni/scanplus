@@ -43,7 +43,7 @@ dependencies {
     // AndroidX & Kotlin
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation(libs.kotlinx.coroutines.android)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
@@ -53,11 +53,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
 
     // Huawei HMS base dependencies required by ScanKit core
-    api("com.huawei.hms:dynamic-api:1.0.25.300")
-    api("com.huawei.hmf:tasks:1.5.2.301")
-    api("com.huawei.hms:ml-computer-sdkbase-inner:3.11.0.301")
-    api("com.huawei.agconnect:agconnect-core:1.9.4.300")
-    api("com.huawei.hms:hatool:6.13.0.303")
-    api("com.huawei.hms:network-grs:8.0.1.316")
-    api("com.huawei.hms:network-embedded:8.0.1.316")
+    api(libs.huawei.hms.dynamic.api)
+    api(libs.huawei.hmf.tasks)
+    api(libs.huawei.hms.ml.computer.sdkbase.inner)
+    api(libs.huawei.agconnect.core)
+    api(libs.huawei.hms.hatool)
+    api(libs.huawei.hms.network.grs)
+    api(libs.huawei.hms.network.embedded)
 }

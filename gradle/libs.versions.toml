@@ -8,6 +8,16 @@ lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
+kotlinxCoroutines = "1.9.0"
+
+# Huawei HMS dependencies
+huaweiDynamicApi = "1.0.25.300"
+huaweiTasks = "1.5.2.301"
+huaweiMlComputerSdkbaseInner = "3.11.0.301"
+huaweiAgconnectCore = "1.9.4.300"
+huaweiHatool = "6.13.0.303"
+huaweiNetworkGrs = "8.0.1.316"
+huaweiNetworkEmbedded = "8.0.1.316"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -25,8 +35,19 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 
+# Coroutines
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+
+# Huawei HMS ScanKit base dependencies
+huawei-hms-dynamic-api = { group = "com.huawei.hms", name = "dynamic-api", version.ref = "huaweiDynamicApi" }
+huawei-hmf-tasks = { group = "com.huawei.hmf", name = "tasks", version.ref = "huaweiTasks" }
+huawei-hms-ml-computer-sdkbase-inner = { group = "com.huawei.hms", name = "ml-computer-sdkbase-inner", version.ref = "huaweiMlComputerSdkbaseInner" }
+huawei-agconnect-core = { group = "com.huawei.agconnect", name = "agconnect-core", version.ref = "huaweiAgconnectCore" }
+huawei-hms-hatool = { group = "com.huawei.hms", name = "hatool", version.ref = "huaweiHatool" }
+huawei-hms-network-grs = { group = "com.huawei.hms", name = "network-grs", version.ref = "huaweiNetworkGrs" }
+huawei-hms-network-embedded = { group = "com.huawei.hms", name = "network-embedded", version.ref = "huaweiNetworkEmbedded" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-
