@@ -5,6 +5,12 @@
     <uses-feature android:name="android.hardware.camera.any" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FLASHLIGHT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <application
         android:allowBackup="true"
@@ -16,18 +22,49 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Scanplus">
+
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.scankitdemokotlin.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Scanplus"
-            android:windowSoftInputMode="adjustResize">
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name="com.example.scankitdemokotlin.CommonActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.example.scankitdemokotlin.DefinedActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.example.scankitdemokotlin.GenerateCodeActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.example.scankitdemokotlin.DisPlayActivity"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name="com.example.scankitdemokotlin.DisPlayMulActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name="com.wzvideni.scanplus.MainActivity"
+            android:exported="false"
+            android:label="Compose Camera2 Scan View" />
     </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+    </queries>
 
 </manifest>

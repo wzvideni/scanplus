@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingBottom="40dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="50dp"
+            android:gravity="center"
+            android:padding="15dp"
+            android:text="@string/mwc_title"
+            android:textColor="#000000"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginLeft="30dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginRight="30dp"
+            android:background="@drawable/clors_dis"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/mwc_subject"
+                android:textColor="#000000"
+                android:textSize="20sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/mwc_detail"
+                android:textColor="#99000000"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="30dp"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/button_scan1"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:background="@drawable/clors_btn"
+                android:onClick="loadScanKitBtnClick"
+                android:text="@string/default_view_decoe"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/button_scan3"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/clors_btn"
+                android:onClick="newViewBtnClick"
+                android:text="@string/customized_view_decode"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/button_scan4"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/clors_btn"
+                android:onClick="bitmapBtnClick"
+                android:text="@string/photo_decode"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/button_scan5"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/clors_btn"
+                android:onClick="multiProcessorSynBtnClick"
+                android:text="@string/multiProcessor_api_syn_decode"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/button_scan6"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/clors_btn"
+                android:onClick="multiProcessorAsynBtnClick"
+                android:text="@string/multiProcessor_api_asyn_decode"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/button_scan7"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/clors_btn"
+                android:onClick="generateQRCodeBtnClick"
+                android:text="@string/generate_QR_code"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/button_scan8"
+                android:layout_width="310dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/clors_btn"
+                android:onClick="composeScanBtnClick"
+                android:text="Jetpack Compose Camera2 Scan"
+                android:textAllCaps="false"
+                android:textColor="#ffffff"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

@@ -38,6 +38,8 @@ android {
 
 dependencies {
     implementation(project(":scanplus"))
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.cardview)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

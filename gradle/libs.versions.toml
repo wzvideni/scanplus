@@ -1,5 +1,7 @@
 [versions]
 agp = "9.4.1"
+appcompat = "1.7.0"
+cardview = "1.0.0"
 coreKtx = "1.19.1"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -20,6 +22,8 @@ huaweiNetworkGrs = "8.0.1.316"
 huaweiNetworkEmbedded = "8.0.1.316"
 
 [libraries]
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-cardview = { group = "androidx.cardview", name = "cardview", version.ref = "cardview" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
