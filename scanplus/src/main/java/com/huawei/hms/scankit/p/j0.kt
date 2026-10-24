@@ -56,7 +56,7 @@ class j0(
     private var textureView: TextureView? = null
 
     private val camera2Manager: Camera2Manager by lazy {
-        val facing = if (e0Var.c() == 1 || e0Var.b() == 1) {
+        val facing = if (e0Var.b() == 1) {
             CameraCharacteristics.LENS_FACING_FRONT
         } else {
             CameraCharacteristics.LENS_FACING_BACK
