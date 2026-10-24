@@ -22,15 +22,24 @@ class j0(
 
     /**
      * Camera state enum matching ScanKit contract.
+     * Enum constant names b, c, d, e, f match original obfuscated bytecode fields in ScanKit.
      */
     enum class b(private val a: Int) {
-        CAMERA_CLOSED(1),
-        CAMERA_OPENED(2),
-        CAMERA_INITIALED(3),
-        PREVIEW_STARTED(4),
-        PREVIEW_STOPPED(5);
+        b(1),
+        c(2),
+        d(3),
+        e(4),
+        f(5);
 
         fun b(): Int = a
+
+        companion object {
+            @JvmField val CAMERA_CLOSED = b
+            @JvmField val CAMERA_OPENED = c
+            @JvmField val CAMERA_INITIALED = d
+            @JvmField val PREVIEW_STARTED = e
+            @JvmField val PREVIEW_STOPPED = f
+        }
     }
 
     /**
