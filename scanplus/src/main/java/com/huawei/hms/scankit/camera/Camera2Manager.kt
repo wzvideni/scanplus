@@ -794,4 +794,16 @@ class Camera2Manager(
     override fun getPreviewSize(): Point = Point(previewSize.x, previewSize.y)
 
     override fun getSensorOrientation(): Int = sensorOrientation
+
+    private var displayOrientation: Int = 90
+
+    @Synchronized
+    override fun setDisplayOrientation(degrees: Int) {
+        this.displayOrientation = degrees
+        textureView?.let { tv ->
+            if (tv.width > 0 && tv.height > 0) {
+                configureTransform(tv.width, tv.height)
+            }
+        }
+    }
 }

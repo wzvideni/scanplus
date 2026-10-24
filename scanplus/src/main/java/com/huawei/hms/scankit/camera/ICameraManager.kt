@@ -37,4 +37,5 @@ interface ICameraManager {
     fun getExposureStep(): Float
     fun getPreviewSize(): Point
     fun getSensorOrientation(): Int
+    fun setDisplayOrientation(degrees: Int)
 }

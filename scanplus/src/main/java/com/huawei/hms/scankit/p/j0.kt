@@ -104,7 +104,8 @@ class j0(
             context = context,
             lensFacing = facing,
             targetResolution = e0Var.a() ?: Point(Camera1Manager.DEFAULT_PREVIEW_WIDTH, Camera1Manager.DEFAULT_PREVIEW_HEIGHT),
-            recordingHint = e0Var.e()
+            recordingHint = e0Var.e(),
+            displayOrientation = e0Var.d()
         )
     }
 
@@ -361,10 +362,7 @@ class j0(
     @JvmName("b")
     fun setDisplayOrientation(i: Int) {
         e0Var.a(i)
-        val mgr = activeManager
-        if (mgr is Camera1Manager) {
-            mgr.setDisplayOrientation(i)
-        }
+        activeManager?.setDisplayOrientation(i)
     }
 
     @Synchronized
@@ -388,6 +386,7 @@ class j0(
             m()
         }
         activeManager?.attachTextureView(textureView)
+        activeManager?.setDisplayOrientation(e0Var.d())
         if (currentState.b() < b.CAMERA_INITIALED.b()) {
             currentState = b.CAMERA_INITIALED
         }

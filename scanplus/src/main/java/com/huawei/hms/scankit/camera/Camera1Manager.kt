@@ -14,6 +14,7 @@ import android.util.Range
 import android.view.Surface
 import android.view.TextureView
 import android.view.WindowManager
+import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.p.k0
 import java.io.IOException
 
@@ -26,7 +27,8 @@ class Camera1Manager(
     private val context: Context,
     private val lensFacing: Int = Camera.CameraInfo.CAMERA_FACING_BACK,
     private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-    private val recordingHint: Boolean = false
+    private val recordingHint: Boolean = false,
+    private var displayOrientation: Int = 90
 ) : ICameraManager {
 
     companion object {
@@ -41,7 +43,6 @@ class Camera1Manager(
 
     private var previewSize: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
     private var sensorOrientation: Int = 90
-    private var displayOrientation: Int = 90
 
     private var isTorchOn: Boolean = false
     @Volatile
@@ -116,6 +117,8 @@ class Camera1Manager(
             val tv = textureView
             if (tv != null && tv.surfaceTexture != null) {
                 cam.setPreviewTexture(tv.surfaceTexture)
+                val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
+                cam.setDisplayOrientation(finalOrientation)
             }
         } catch (e: Throwable) {
             ScanLog.e(TAG, "Failed to open Camera1: ${e.message}", e)
@@ -182,9 +185,10 @@ class Camera1Manager(
             } catch (ignored: Exception) {}
         }
 
-        // 7. Orientation
-        displayOrientation = calculateOrientation()
-        cam.setDisplayOrientation(displayOrientation)
+        // 7. Orientation - match original ScanKit contract:
+        // Use customDisplayOrientation if explicitly set, otherwise displayOrientation (passed from e0Var.d(), 90 in portrait)
+        val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
+        cam.setDisplayOrientation(finalOrientation)
 
         try {
             cam.parameters = parameters
@@ -228,28 +232,6 @@ class Camera1Manager(
         }
     }
 
-    private fun calculateOrientation(): Int {
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-        val rotation = windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
-        var degrees = 0
-        when (rotation) {
-            Surface.ROTATION_0 -> degrees = 0
-            Surface.ROTATION_90 -> degrees = 90
-            Surface.ROTATION_180 -> degrees = 180
-            Surface.ROTATION_270 -> degrees = 270
-        }
-
-        val info = Camera.CameraInfo()
-        Camera.getCameraInfo(cameraId, info)
-
-        return if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            val result = (info.orientation + degrees) % 360
-            (360 - result) % 360
-        } else {
-            (info.orientation - degrees + 360) % 360
-        }
-    }
-
     @Synchronized
     override fun attachTextureView(view: TextureView) {
         this.textureView = view
@@ -258,6 +240,8 @@ class Camera1Manager(
         if (cam != null && surfaceTexture != null) {
             try {
                 cam.setPreviewTexture(surfaceTexture)
+                val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
+                cam.setDisplayOrientation(finalOrientation)
             } catch (e: Exception) {
                 ScanLog.e(TAG, "setPreviewTexture failed", e)
             }
@@ -563,10 +547,11 @@ class Camera1Manager(
     override fun getSensorOrientation(): Int = sensorOrientation
 
     @Synchronized
-    fun setDisplayOrientation(degrees: Int) {
+    override fun setDisplayOrientation(degrees: Int) {
         displayOrientation = degrees
         try {
-            camera?.setDisplayOrientation(degrees)
+            val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: degrees
+            camera?.setDisplayOrientation(finalOrientation)
         } catch (e: Exception) {
             ScanLog.w(TAG, "setDisplayOrientation error", e)
         }

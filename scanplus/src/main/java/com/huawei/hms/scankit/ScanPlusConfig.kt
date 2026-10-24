@@ -26,6 +26,17 @@ object ScanPlusConfig {
     var isLogEnabled: Boolean = false
 
     /**
+     * Optional manual override for Camera preview display orientation in degrees (e.g. 0, 90, 180, 270).
+     *
+     * By default (null), ScanPlus adheres 100% to ScanKit's original orientation contract (`e0.d()`,
+     * which is 90 degrees in portrait mode matching the original scanplus-2.15.0.301.aar behavior).
+     *
+     * If set to a non-null value, this orientation value will override the hardware/system display orientation.
+     */
+    @JvmStatic
+    var customDisplayOrientation: Int? = null
+
+    /**
      * Minimum log priority level to print when [isLogEnabled] is false.
      * Use standard Android Log priorities: [Log.VERBOSE], [Log.DEBUG], [Log.INFO], [Log.WARN], [Log.ERROR].
      * Defaults to [Log.WARN] (only warnings and errors are output by default).
