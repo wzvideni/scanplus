@@ -61,12 +61,16 @@ class j0(
         companion object {
             @JvmField
             val CAMERA_CLOSED = CLOSED_STATE
+
             @JvmField
             val CAMERA_OPENED = c
+
             @JvmField
             val CAMERA_INITIALED = d
+
             @JvmField
             val PREVIEW_STARTED = e
+
             @JvmField
             val PREVIEW_STOPPED = f
 
@@ -106,7 +110,6 @@ class j0(
             Camera.CameraInfo.CAMERA_FACING_BACK
         }
         Camera1Manager(
-            context = context,
             lensFacing = facing,
             targetResolution = e0Var.a() ?: Point(
                 Camera1Manager.DEFAULT_PREVIEW_WIDTH,

@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Point
 import android.graphics.Rect
 import android.os.Bundle
-import com.huawei.hms.scankit.util.ScanLog
 import android.view.TextureView
 import com.huawei.hms.feature.dynamic.ObjectWrapper
 import com.huawei.hms.hmsscankit.DetailRect
@@ -19,7 +18,14 @@ import com.huawei.hms.scankit.camera.ICameraManager
 import com.huawei.hms.scankit.p.h4
 import com.huawei.hms.scankit.p.s6
 import com.huawei.hms.scankit.p.y6
-import kotlinx.coroutines.*
+import com.huawei.hms.scankit.util.ScanLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -40,7 +46,7 @@ class Camera2ScanManager(
     }
 
     private var activeCamera: ICameraManager? = null
-    private val camera1Manager by lazy { Camera1Manager(context) }
+    private val camera1Manager by lazy { Camera1Manager() }
     private val camera2Manager by lazy { Camera2Manager(context) }
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -80,11 +86,13 @@ class Camera2ScanManager(
                     camera1Manager.openCamera()
                     activeCamera = camera1Manager
                 }
+
                 CameraMode.CAMERA2 -> {
                     setupCameraCallbacks(camera2Manager)
                     camera2Manager.openCamera()
                     activeCamera = camera2Manager
                 }
+
                 CameraMode.AUTO -> {
                     var c1Success = false
                     try {
@@ -94,7 +102,10 @@ class Camera2ScanManager(
                         activeCamera = camera1Manager
                         c1Success = true
                     } catch (e: Throwable) {
-                        ScanLog.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}, falling back to Camera2...")
+                        ScanLog.w(
+                            TAG,
+                            "Camera1 open failed in AUTO mode: ${e.message}, falling back to Camera2..."
+                        )
                     }
 
                     if (!c1Success) {
@@ -112,7 +123,10 @@ class Camera2ScanManager(
             activeCamera?.startPreview()
         } catch (e: Exception) {
             if (cameraMode == CameraMode.AUTO && activeCamera === camera1Manager) {
-                ScanLog.w(TAG, "Camera1 startPreview failed in AUTO mode: ${e.message}, falling back to Camera2...")
+                ScanLog.w(
+                    TAG,
+                    "Camera1 startPreview failed in AUTO mode: ${e.message}, falling back to Camera2..."
+                )
                 camera1Manager.closeCamera()
                 setupCameraCallbacks(camera2Manager)
                 camera2Manager.openCamera()
@@ -219,7 +233,8 @@ class Camera2ScanManager(
                     // Handle intelligent auto-zoom for distant or small barcodes
                     if (autoZoomEnabled && first.l() > 1.0f && System.currentTimeMillis() - lastZoomTime > 1000 && cam != null) {
                         lastZoomTime = System.currentTimeMillis()
-                        val targetZoom = (cam.getCurrentZoomRatio() * first.l()).coerceAtMost(cam.getMaxZoomRatio())
+                        val targetZoom =
+                            (cam.getCurrentZoomRatio() * first.l()).coerceAtMost(cam.getMaxZoomRatio())
                         cam.setZoomRatio(targetZoom)
                     }
 

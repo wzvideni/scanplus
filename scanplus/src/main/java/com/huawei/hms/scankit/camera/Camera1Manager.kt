@@ -1,6 +1,5 @@
 package com.huawei.hms.scankit.camera
 
-import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Point
@@ -23,7 +22,6 @@ import kotlin.math.roundToInt
  */
 @Suppress("DEPRECATION")
 class Camera1Manager(
-    private val context: Context,
     private val lensFacing: Int = Camera.CameraInfo.CAMERA_FACING_BACK,
     private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
     private val recordingHint: Boolean = false,
@@ -117,8 +115,7 @@ class Camera1Manager(
             onCameraOpened?.invoke()
 
             // If TextureView was attached before opening, bind it now
-            val tv = textureView
-            if (tv?.surfaceTexture != null) {
+            textureView?.let { tv ->
                 cam.setPreviewTexture(tv.surfaceTexture)
                 val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
                 cam.setDisplayOrientation(finalOrientation)
@@ -469,7 +466,10 @@ class Camera1Manager(
                         currentCam.parameters = p
                     }
                 } catch (e: Exception) {
-                    ScanLog.d(TAG, "Failed to restore focus mode in autoFocus callback: ${e.message}")
+                    ScanLog.d(
+                        TAG,
+                        "Failed to restore focus mode in autoFocus callback: ${e.message}"
+                    )
                 }
                 tapFocusCount = 2
             }
