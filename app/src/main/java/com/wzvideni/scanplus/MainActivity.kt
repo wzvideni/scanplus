@@ -22,8 +22,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.huawei.hms.ml.scan.HmsScan
-import com.huawei.hms.scankit.camera2.ScanPlusCamera2Preview
+import com.huawei.hms.scankit.camera2.Camera2ScanView
 import com.wzvideni.scanplus.ui.theme.ScanplusTheme
 
 class MainActivity : ComponentActivity() {
@@ -72,12 +76,43 @@ fun ScanScreen(modifier: Modifier = Modifier) {
 
     Box(modifier = modifier.fillMaxSize()) {
         if (hasCameraPermission) {
-            ScanPlusCamera2Preview(
+            var scanView: Camera2ScanView? by remember { mutableStateOf(null) }
+            val lifecycleOwner = LocalLifecycleOwner.current
+
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    when (event) {
+                        Lifecycle.Event.ON_RESUME -> scanView?.startScan()
+                        Lifecycle.Event.ON_PAUSE -> scanView?.stopScan()
+                        Lifecycle.Event.ON_DESTROY -> scanView?.release()
+                        else -> Unit
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                    scanView?.release()
+                }
+            }
+
+            AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                isTorchOn = isTorchOn,
-                onScanResult = { results ->
-                    if (results.isNotEmpty() && lastResult == null) {
-                        lastResult = results[0]
+                factory = { ctx ->
+                    Camera2ScanView(ctx).apply {
+                        this.onScanResult = { results ->
+                            if (results.isNotEmpty() && lastResult == null) {
+                                lastResult = results[0]
+                            }
+                        }
+                        scanView = this
+                        startScan()
+                    }
+                },
+                update = { view ->
+                    view.onScanResult = { results ->
+                        if (results.isNotEmpty() && lastResult == null) {
+                            lastResult = results[0]
+                        }
                     }
                 }
             )
