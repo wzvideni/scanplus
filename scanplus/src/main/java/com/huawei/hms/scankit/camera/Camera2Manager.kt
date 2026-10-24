@@ -649,7 +649,13 @@ class Camera2Manager(
         val session = captureSession ?: return
 
         try {
+            val hasFlash = cameraCharacteristics?.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            if (!hasFlash) {
+                Log.w(TAG, "Flash not available on current camera")
+                return
+            }
             if (isTorchOn) {
+                builder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
                 builder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
             } else {
                 builder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_OFF)

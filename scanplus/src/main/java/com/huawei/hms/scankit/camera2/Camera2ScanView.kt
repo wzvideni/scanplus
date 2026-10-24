@@ -112,6 +112,12 @@ class Camera2ScanView @JvmOverloads constructor(
 
     fun toggleTorch(): Boolean = scanManager?.toggleTorch() ?: false
 
+    fun setTorch(enable: Boolean) {
+        ensureManager().setTorch(enable)
+    }
+
+    fun isTorchOn(): Boolean = scanManager?.isTorchOn() ?: false
+
     fun release() {
         stopScan()
         scanManager?.release()

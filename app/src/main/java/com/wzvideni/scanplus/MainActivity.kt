@@ -79,6 +79,11 @@ fun ScanScreen(modifier: Modifier = Modifier) {
             var scanView: Camera2ScanView? by remember { mutableStateOf(null) }
             val lifecycleOwner = LocalLifecycleOwner.current
 
+            // Synchronize flashlight state
+            LaunchedEffect(isTorchOn, scanView) {
+                scanView?.setTorch(isTorchOn)
+            }
+
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     when (event) {
@@ -104,6 +109,7 @@ fun ScanScreen(modifier: Modifier = Modifier) {
                                 lastResult = results[0]
                             }
                         }
+                        this.setTorch(isTorchOn)
                         scanView = this
                         startScan()
                     }
@@ -114,12 +120,17 @@ fun ScanScreen(modifier: Modifier = Modifier) {
                             lastResult = results[0]
                         }
                     }
+                    view.setTorch(isTorchOn)
                 }
             )
 
             // Flashlight Toggle Button
             FloatingActionButton(
-                onClick = { isTorchOn = !isTorchOn },
+                onClick = {
+                    val nextState = !isTorchOn
+                    isTorchOn = nextState
+                    scanView?.setTorch(nextState)
+                },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(24.dp),
