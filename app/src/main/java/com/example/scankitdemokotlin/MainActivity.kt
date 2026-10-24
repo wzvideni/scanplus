@@ -89,9 +89,13 @@ class MainActivity : Activity(), ActivityCompat.OnRequestPermissionsResultCallba
      * Call the bitmap.
      */
     fun bitmapBtnClick(view: View?) {
-        val intent = Intent(this, CommonActivity::class.java)
-        intent.putExtra(DECODE_MODE, BITMAP_CODE)
-        this.startActivityForResult(intent, REQUEST_CODE_SCAN_MULTI)
+        if (hasCameraPermission()) {
+            val intent = Intent(this, CommonActivity::class.java)
+            intent.putExtra(DECODE_MODE, BITMAP_CODE)
+            this.startActivityForResult(intent, REQUEST_CODE_SCAN_MULTI)
+        } else {
+            requestPermission(BITMAP_CODE, DECODE)
+        }
     }
 
     /**

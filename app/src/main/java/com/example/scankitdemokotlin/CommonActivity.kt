@@ -175,6 +175,7 @@ class CommonActivity :Activity(){
     }
 
     override fun onDestroy() {
+        surfaceHolder?.removeCallback(surfaceCallBack)
         super.onDestroy()
     }
 

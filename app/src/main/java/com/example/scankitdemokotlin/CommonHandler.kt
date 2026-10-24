@@ -70,21 +70,25 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
      */
     private fun decodeSyn(width: Int, height: Int, data: ByteArray, activity: Activity, type: Int, mode: Int): Array<HmsScan?>? {
         val bitmap = convertToBitmap(width, height, data)
-        if (mode == BITMAP_CODE) {
-            val options = HmsScanAnalyzerOptions.Creator().setHmsScanTypes(type).setPhotoMode(false).create()
-            return ScanUtil.decodeWithBitmap(activity, bitmap, options)
-        } else if (mode == MULTIPROCESSOR_SYN_CODE) {
-            val image = MLFrame.fromBitmap(bitmap)
-            val options = HmsScanAnalyzerOptions.Creator().setHmsScanTypes(type).create()
-            val analyzer = HmsScanAnalyzer(options)
-            val result = analyzer.analyseFrame(image)
-            if (result != null && result.size() > 0 && result.valueAt(0) != null && !TextUtils.isEmpty(result.valueAt(0)!!.getOriginalValue())) {
-                val info = arrayOfNulls<HmsScan>(result.size())
-                for (index in 0 until result.size()) {
-                    info[index] = result.valueAt(index)
+        try {
+            if (mode == BITMAP_CODE) {
+                val options = HmsScanAnalyzerOptions.Creator().setHmsScanTypes(type).setPhotoMode(false).create()
+                return ScanUtil.decodeWithBitmap(activity, bitmap, options)
+            } else if (mode == MULTIPROCESSOR_SYN_CODE) {
+                val image = MLFrame.fromBitmap(bitmap)
+                val options = HmsScanAnalyzerOptions.Creator().setHmsScanTypes(type).create()
+                val analyzer = HmsScanAnalyzer.Creator(activity).setHmsScanTypes(options).create()
+                val result = analyzer.analyseFrame(image)
+                if (result != null && result.size() > 0 && result.valueAt(0) != null && !TextUtils.isEmpty(result.valueAt(0)!!.getOriginalValue())) {
+                    val info = arrayOfNulls<HmsScan>(result.size())
+                    for (index in 0 until result.size()) {
+                        info[index] = result.valueAt(index)
+                    }
+                    return info
                 }
-                return info
             }
+        } finally {
+            bitmap.recycle()
         }
         return null
     }
@@ -103,22 +107,24 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
      * Call the MultiProcessor API in asynchronous mode.
      */
     private fun decodeAsyn(width: Int, height: Int, data: ByteArray, activity: Activity, type: Int) {
-        var bitmap = convertToBitmap(width, height, data)
+        val bitmap = convertToBitmap(width, height, data)
         val image = MLFrame.fromBitmap(bitmap)
         val options = HmsScanAnalyzerOptions.Creator().setHmsScanTypes(type).create()
-        val analyzer = HmsScanAnalyzer(options)
+        val analyzer = HmsScanAnalyzer.Creator(activity).setHmsScanTypes(options).create()
 
         analyzer.analyzInAsyn(image).addOnSuccessListener(OnSuccessListener<MutableList<HmsScan?>?> {
-            if (it != null && it.size > 0 && it[0] != null && !TextUtils.isEmpty(it[0]!!.getOriginalValue())) {
-                //val infos:Array<HmsScan?> = arrayOfNulls<HmsScan?>(it.size)
-                val message = Message()
-                message.obj = it.toTypedArray()
-                sendMessage(message)
-                restart(DEFAULT_ZOOM)
-            } else {
-                restart(DEFAULT_ZOOM)
+            try {
+                if (it != null && it.size > 0 && it[0] != null && !TextUtils.isEmpty(it[0]!!.getOriginalValue())) {
+                    val message = Message()
+                    message.obj = it.toTypedArray()
+                    sendMessage(message)
+                    restart(DEFAULT_ZOOM)
+                } else {
+                    restart(DEFAULT_ZOOM)
+                }
+            } finally {
+                bitmap.recycle()
             }
-            bitmap.recycle()
         }).addOnFailureListener { e ->
             Log.w(TAG, e)
             restart(DEFAULT_ZOOM)
@@ -130,33 +136,33 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
         Log.e(TAG, message.what.toString())
         removeMessages(1)
         if (message.what == 0) {
-
             val commonActivity1 = activity as CommonActivity
             commonActivity1.scanResultView?.clear()
+
+            val rawArray = message.obj as? Array<*>
+            val arr = rawArray?.filterIsInstance<HmsScan>()?.toTypedArray() ?: emptyArray()
+
             val intent = Intent()
-            intent.putExtra(SCAN_RESULT, message.obj as Array<HmsScan?>)
+            intent.putExtra(SCAN_RESULT, arr)
             activity.setResult(Activity.RESULT_OK, intent)
-            //Show the scanning result on the screen.
+
+            // Show the scanning result on the screen.
             if (mode == MULTIPROCESSOR_ASYN_CODE || mode == MULTIPROCESSOR_SYN_CODE) {
                 val commonActivity = activity
-                val arr = message.obj as Array<HmsScan>
-                if (arr!=null&&arr.size>=0) {
+                if (arr.isNotEmpty()) {
                     for (i in arr.indices) {
-                        if (i == 0) {
-                            commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i], Color.YELLOW))
-                        } else if (i == 1) {
-                            commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i], Color.BLUE))
-                        } else if (i == 2) {
-                            commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i], Color.RED))
-                        } else if (i == 3) {
-                            commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i], Color.GREEN))
-                        } else {
-                            commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i]))
+                        val color = when (i) {
+                            0 -> Color.YELLOW
+                            1 -> Color.BLUE
+                            2 -> Color.RED
+                            3 -> Color.GREEN
+                            else -> Color.WHITE
                         }
+                        commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i], color))
                     }
                 }
-                commonActivity.scanResultView!!.setCameraInfo(1080, 1920)
-                commonActivity.scanResultView!!.invalidate()
+                commonActivity.scanResultView?.setCameraInfo(1080, 1920)
+                commonActivity.scanResultView?.invalidate()
                 sendEmptyMessageDelayed(1, 1000)
             } else {
                 activity.finish()

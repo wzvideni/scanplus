@@ -44,6 +44,10 @@ class CameraOperation {
     private var isPreview = false
     private val defaultZoom = 1.0
 
+    private var previewWidth = PREVIEW_WIDTH
+    private var previewHeight = PREVIEW_HEIGHT
+    private var pendingZoom = defaultZoom
+
     private val targetHandlerRef = AtomicReference<Handler?>()
     private val cameraOpenCloseLock = Semaphore(1)
 
@@ -126,16 +130,39 @@ class CameraOperation {
         } else {
             maxZoomRatio = chars.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
         }
+        selectOptimalSize(chars)
+    }
+
+    private fun selectOptimalSize(chars: CameraCharacteristics) {
+        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+        val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888)?.toList() ?: return
+        if (yuvSizes.isEmpty()) return
+
+        val size1080p = yuvSizes.firstOrNull { it.width == 1920 && it.height == 1080 }
+        val size720p = yuvSizes.firstOrNull { it.width == 1280 && it.height == 720 }
+
+        val selected = size1080p ?: size720p ?: yuvSizes.firstOrNull {
+            val ratio = it.width.toDouble() / it.height.toDouble()
+            Math.abs(ratio - (16.0 / 9.0)) < 0.05
+        } ?: yuvSizes[0]
+
+        previewWidth = selected.width
+        previewHeight = selected.height
+        Log.i(TAG, "Selected preview size: $previewWidth x $previewHeight")
     }
 
     private fun createSession(holder: SurfaceHolder) {
         val device = cameraDevice ?: return
         try {
             val surface = holder.surface
+            if (!surface.isValid) {
+                Log.w(TAG, "Surface is not valid yet")
+                return
+            }
             previewSurface = surface
 
             imageReader?.close()
-            val reader = ImageReader.newInstance(PREVIEW_WIDTH, PREVIEW_HEIGHT, ImageFormat.YUV_420_888, 2)
+            val reader = ImageReader.newInstance(previewWidth, previewHeight, ImageFormat.YUV_420_888, 3)
             imageReader = reader
 
             reader.setOnImageAvailableListener({ ir ->
@@ -188,6 +215,9 @@ class CameraOperation {
         val session = captureSession ?: return
         val builder = previewRequestBuilder ?: return
         try {
+            if (pendingZoom != defaultZoom) {
+                applyZoom(builder, pendingZoom.toFloat())
+            }
             session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             isPreview = true
         } catch (e: Exception) {
@@ -219,6 +249,8 @@ class CameraOperation {
         try {
             cameraOpenCloseLock.acquire()
             stopPreview()
+            targetHandlerRef.set(null)
+            pendingZoom = defaultZoom
             captureSession?.close()
             captureSession = null
             cameraDevice?.close()
@@ -236,11 +268,29 @@ class CameraOperation {
     @Synchronized
     fun callbackFrame(handler: Handler?, zoomValue: Double) {
         if (handler == null) return
-        if (cameraDevice != null && isPreview) {
-            targetHandlerRef.set(handler)
-            if (zoomValue != defaultZoom) {
+        targetHandlerRef.set(handler)
+        if (zoomValue != defaultZoom) {
+            pendingZoom = zoomValue
+            if (cameraDevice != null && isPreview) {
                 setZoom(zoomValue.toFloat())
             }
+        }
+    }
+
+    private fun applyZoom(builder: CaptureRequest.Builder, zoomValue: Float) {
+        val clamped = zoomValue.coerceIn(1.0f, maxZoomRatio)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            cameraCharacteristics?.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE) != null
+        ) {
+            builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, clamped)
+        } else {
+            val arraySize = sensorActiveArraySize ?: return
+            val cropW = (arraySize.width() / clamped).toInt()
+            val cropH = (arraySize.height() / clamped).toInt()
+            val left = (arraySize.width() - cropW) / 2
+            val top = (arraySize.height() - cropH) / 2
+            val cropRect = Rect(left, top, left + cropW, top + cropH)
+            builder.set(CaptureRequest.SCALER_CROP_REGION, cropRect)
         }
     }
 
@@ -249,20 +299,7 @@ class CameraOperation {
         val session = captureSession ?: return
 
         try {
-            val clamped = zoomValue.coerceIn(1.0f, maxZoomRatio)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                cameraCharacteristics?.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE) != null
-            ) {
-                builder.set(CaptureRequest.CONTROL_ZOOM_RATIO, clamped)
-            } else {
-                val arraySize = sensorActiveArraySize ?: return
-                val cropW = (arraySize.width() / clamped).toInt()
-                val cropH = (arraySize.height() / clamped).toInt()
-                val left = (arraySize.width() - cropW) / 2
-                val top = (arraySize.height() - cropH) / 2
-                val cropRect = Rect(left, top, left + cropW, top + cropH)
-                builder.set(CaptureRequest.SCALER_CROP_REGION, cropRect)
-            }
+            applyZoom(builder, zoomValue)
             session.setRepeatingRequest(builder.build(), null, backgroundHandler)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to apply zoom", e)
