@@ -35,7 +35,7 @@ class GenerateCodeActivity : Activity() {
     private val COLOR = intArrayOf(Color.BLACK, Color.BLUE, Color.GRAY, Color.GREEN, Color.RED, Color.YELLOW)
     private val BACKGROUND = intArrayOf(Color.WHITE, Color.YELLOW, Color.RED, Color.GREEN, Color.GRAY, Color.BLUE, Color.BLACK)
 
-    // Define a view.
+    // Define views
     private var inputContent: EditText? = null
     private var generateType: Spinner? = null
     private var generateMargin: Spinner? = null
@@ -55,6 +55,7 @@ class GenerateCodeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.i(TAG, "GenerateCodeActivity onCreate")
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(R.layout.activity_generate)
         this.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -71,6 +72,15 @@ class GenerateCodeActivity : Activity() {
         barcodeImage = findViewById(R.id.barcode_image)
         barcodeWidth = findViewById(R.id.barcode_width)
         barcodeHeight = findViewById(R.id.barcode_height)
+
+        // Set default values for quick testing
+        inputContent?.setText("https://developer.huawei.com/consumer/cn/hms/huawei-scankit")
+        barcodeWidth?.setText("700")
+        barcodeHeight?.setText("700")
+
+        // Explicitly bind click listeners to avoid reflection issues
+        findViewById<View>(R.id.btn_generate_code)?.setOnClickListener { generateCodeBtnClick(it) }
+        findViewById<View>(R.id.btn_save_code)?.setOnClickListener { saveCodeBtnClick(it) }
 
         // Set the barcode type.
         generateType?.onItemSelectedListener = object : OnItemSelectedListener {
@@ -115,6 +125,9 @@ class GenerateCodeActivity : Activity() {
                 background = BACKGROUND[0]
             }
         }
+
+        // Automatically generate initial QR code on start
+        generateCodeBtnClick(null)
     }
 
     /**
@@ -152,7 +165,9 @@ class GenerateCodeActivity : Activity() {
                 .create()
             resultImage = ScanUtil.buildBitmap(content, type, width, height, options)
             barcodeImage?.setImageBitmap(resultImage)
+            Log.i(TAG, "Barcode generated successfully: $width x $height")
         } catch (e: WriterException) {
+            Log.e(TAG, "WriterException: ${e.message}", e)
             Toast.makeText(this, "Parameter Error!", Toast.LENGTH_SHORT).show()
         }
     }

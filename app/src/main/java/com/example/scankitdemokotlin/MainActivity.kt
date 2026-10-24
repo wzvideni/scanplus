@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.text.TextUtils
+import android.util.Log
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -21,6 +22,7 @@ import com.huawei.hms.ml.scan.HmsScanAnalyzerOptions
 class MainActivity : Activity(), ActivityCompat.OnRequestPermissionsResultCallback {
 
     companion object {
+        private const val TAG = "MainActivity"
         const val CAMERA_REQ_CODE = 111
         const val DEFINED_CODE = 222
         const val BITMAP_CODE = 333
@@ -46,6 +48,15 @@ class MainActivity : Activity(), ActivityCompat.OnRequestPermissionsResultCallba
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
             window?.addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
         }
+
+        // Programmatically bind all button click listeners to ensure 100% reliable trigger
+        findViewById<View>(R.id.button_scan1)?.setOnClickListener { loadScanKitBtnClick(it) }
+        findViewById<View>(R.id.button_scan3)?.setOnClickListener { newViewBtnClick(it) }
+        findViewById<View>(R.id.button_scan4)?.setOnClickListener { bitmapBtnClick(it) }
+        findViewById<View>(R.id.button_scan5)?.setOnClickListener { multiProcessorSynBtnClick(it) }
+        findViewById<View>(R.id.button_scan6)?.setOnClickListener { multiProcessorAsynBtnClick(it) }
+        findViewById<View>(R.id.button_scan7)?.setOnClickListener { generateQRCodeBtnClick(it) }
+        findViewById<View>(R.id.button_scan8)?.setOnClickListener { composeScanBtnClick(it) }
     }
 
     private fun hasCameraPermission(): Boolean {
@@ -53,6 +64,7 @@ class MainActivity : Activity(), ActivityCompat.OnRequestPermissionsResultCallba
     }
 
     fun loadScanKitBtnClick(view: View?) {
+        Log.i(TAG, "loadScanKitBtnClick triggered")
         if (hasCameraPermission()) {
             ScanUtil.startScan(this, REQUEST_CODE_SCAN_ONE, HmsScanAnalyzerOptions.Creator().create())
         } else {
@@ -64,6 +76,7 @@ class MainActivity : Activity(), ActivityCompat.OnRequestPermissionsResultCallba
      * Call the customized view.
      */
     fun newViewBtnClick(view: View?) {
+        Log.i(TAG, "newViewBtnClick triggered")
         if (hasCameraPermission()) {
             val intent = Intent(this, DefinedActivity::class.java)
             this.startActivityForResult(intent, REQUEST_CODE_DEFINE)
@@ -111,6 +124,7 @@ class MainActivity : Activity(), ActivityCompat.OnRequestPermissionsResultCallba
      * Start generating the barcode. Directly launches GenerateCodeActivity without permission requirement.
      */
     fun generateQRCodeBtnClick(view: View?) {
+        Log.i(TAG, "generateQRCodeBtnClick triggered, starting GenerateCodeActivity")
         startActivity(Intent(this, GenerateCodeActivity::class.java))
     }
 

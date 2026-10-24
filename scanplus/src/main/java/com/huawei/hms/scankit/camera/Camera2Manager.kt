@@ -39,8 +39,8 @@ class Camera2Manager(
 ) {
     companion object {
         private const val TAG = "ScanKitCamera2"
-        private const val DEFAULT_PREVIEW_WIDTH = 1920
-        private const val DEFAULT_PREVIEW_HEIGHT = 1080
+        private const val DEFAULT_PREVIEW_WIDTH = 1280
+        private const val DEFAULT_PREVIEW_HEIGHT = 720
     }
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -58,6 +58,7 @@ class Camera2Manager(
 
     // Surfaces & Readers
     private var textureView: TextureView? = null
+    private var currentSurfaceTexture: SurfaceTexture? = null
     private var previewSurface: Surface? = null
     private var imageReader: ImageReader? = null
     private var previewSize: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
@@ -82,6 +83,9 @@ class Camera2Manager(
     private var shouldStartPreview: Boolean = false
     @Volatile
     private var isSessionCreating: Boolean = false
+    @Volatile
+    private var isCameraOpening: Boolean = false
+    private var openRetryCount = 0
 
     private val cameraOpenCloseLock = Semaphore(1)
 
@@ -110,7 +114,7 @@ class Camera2Manager(
     private fun stopBackgroundThread() {
         backgroundThread?.quitSafely()
         try {
-            backgroundThread?.join(500)
+            backgroundThread?.join(300)
         } catch (e: InterruptedException) {
             Log.e(TAG, "Error stopping background thread", e)
         }
@@ -181,8 +185,6 @@ class Camera2Manager(
 
     /**
      * Connects preview TextureView and initializes camera preview size.
-     * If the camera device is already opened and the surface is available,
-     * capture session creation begins immediately.
      */
     fun attachTextureView(view: TextureView) {
         this.textureView = view
@@ -191,29 +193,18 @@ class Camera2Manager(
         if (view.isAvailable && view.surfaceTexture != null) {
             configureTransform(view.width, view.height)
             checkAndCreateSession()
-        } else {
-            val existingListener = view.surfaceTextureListener
-            view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                    existingListener?.onSurfaceTextureAvailable(surface, width, height)
-                    selectOptimalSize(width, height)
-                    configureTransform(width, height)
+        }
+
+        // Listen for layout size changes without replacing existing surfaceTextureListeners
+        view.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val w = right - left
+            val h = bottom - top
+            val oldW = oldRight - oldLeft
+            val oldH = oldBottom - oldTop
+            if (w > 0 && h > 0 && (w != oldW || h != oldH)) {
+                configureTransform(w, h)
+                if (view.isAvailable && view.surfaceTexture != null) {
                     checkAndCreateSession()
-                }
-
-                override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-                    existingListener?.onSurfaceTextureSizeChanged(surface, width, height)
-                    configureTransform(width, height)
-                }
-
-                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                    val ret = existingListener?.onSurfaceTextureDestroyed(surface) ?: true
-                    stopPreview()
-                    return ret
-                }
-
-                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-                    existingListener?.onSurfaceTextureUpdated(surface)
                 }
             }
         }
@@ -269,23 +260,35 @@ class Camera2Manager(
 
         if (choices.isEmpty()) return
 
-        // 1080p is preferred for optimal ScanKit barcode recognition
+        val size720p = choices.firstOrNull { it.width == 1280 && it.height == 720 }
         val size1080p = choices.firstOrNull { it.width == 1920 && it.height == 1080 }
-        if (size1080p != null) {
+
+        val hwLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
+            ?: CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
+        val isFullOrHigher = hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3)
+
+        // 720p is guaranteed to run without ISP bandwidth overload on all devices;
+        // 1080p used if FULL/LEVEL_3 hardware level and available.
+        if (isFullOrHigher && size1080p != null) {
             previewSize = Point(1920, 1080)
             Log.i(TAG, "Selected preferred 1080p preview size: 1920 x 1080")
             return
         }
 
-        // 720p fallback
-        val size720p = choices.firstOrNull { it.width == 1280 && it.height == 720 }
         if (size720p != null) {
             previewSize = Point(1280, 720)
             Log.i(TAG, "Selected preferred 720p preview size: 1280 x 720")
             return
         }
 
-        // Otherwise find closest 16:9 ratio between 1000 and 1920
+        if (size1080p != null) {
+            previewSize = Point(1920, 1080)
+            Log.i(TAG, "Selected 1080p preview size: 1920 x 1080")
+            return
+        }
+
+        // Otherwise find closest 16:9 ratio
         var bestSize: Size = choices[0]
         var minDiff = Double.MAX_VALUE
         val targetRatio = 16.0 / 9.0
@@ -293,7 +296,7 @@ class Camera2Manager(
         for (size in choices) {
             val ratio = size.width.toDouble() / size.height.toDouble()
             val diff = Math.abs(ratio - targetRatio)
-            if (size.width in 1000..1920 && diff < minDiff) {
+            if (size.width in 640..1920 && diff < minDiff) {
                 minDiff = diff
                 bestSize = size
             }
@@ -304,26 +307,39 @@ class Camera2Manager(
     }
 
     /**
-     * Opens Camera2 device.
+     * Opens Camera2 device. Handles retries automatically if camera service is busy.
      */
     @SuppressLint("MissingPermission")
     fun openCamera() {
         startBackgroundThread()
-        val id = cameraId
-        if (id == null) {
+        if (cameraDevice != null) {
+            Log.d(TAG, "openCamera: cameraDevice already open")
+            checkAndCreateSession()
+            return
+        }
+        if (isCameraOpening) {
+            Log.d(TAG, "openCamera: camera opening already in progress")
+            return
+        }
+        val id = cameraId ?: run {
             Log.e(TAG, "No suitable camera ID found")
             onCameraError?.invoke(IllegalStateException("No camera ID found"))
             return
         }
 
+        isCameraOpening = true
         try {
             if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+                isCameraOpening = false
                 throw RuntimeException("Time out waiting to lock camera opening.")
             }
             cameraManager.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(camera: CameraDevice) {
                     cameraOpenCloseLock.release()
                     cameraDevice = camera
+                    isCameraOpening = false
+                    openRetryCount = 0
+                    Log.i(TAG, "CameraDevice opened successfully: id=$id")
                     onCameraOpened?.invoke()
                     checkAndCreateSession()
                 }
@@ -332,6 +348,8 @@ class Camera2Manager(
                     cameraOpenCloseLock.release()
                     camera.close()
                     cameraDevice = null
+                    isCameraOpening = false
+                    Log.w(TAG, "CameraDevice disconnected")
                     onCameraClosed?.invoke()
                 }
 
@@ -339,11 +357,28 @@ class Camera2Manager(
                     cameraOpenCloseLock.release()
                     camera.close()
                     cameraDevice = null
-                    Log.e(TAG, "Camera open error: $error")
+                    isCameraOpening = false
+                    Log.e(TAG, "Camera open error: $error (retry=$openRetryCount)")
+
+                    if ((error == CameraDevice.StateCallback.ERROR_CAMERA_IN_USE ||
+                         error == CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE ||
+                         error == CameraDevice.StateCallback.ERROR_CAMERA_DEVICE) &&
+                        openRetryCount < 3
+                    ) {
+                        openRetryCount++
+                        Log.w(TAG, "Camera busy or device error, retrying open in 250ms (attempt $openRetryCount/3)...")
+                        backgroundHandler?.postDelayed({
+                            openCamera()
+                        }, 250)
+                        return
+                    }
+
+                    openRetryCount = 0
                     onCameraError?.invoke(RuntimeException("Camera open error: $error"))
                 }
             }, backgroundHandler)
         } catch (e: Exception) {
+            isCameraOpening = false
             cameraOpenCloseLock.release()
             Log.e(TAG, "Failed to open camera: ${e.message}", e)
             onCameraError?.invoke(e)
@@ -355,7 +390,7 @@ class Camera2Manager(
      */
     fun checkAndCreateSession() {
         if (cameraDevice == null || textureView?.surfaceTexture == null) {
-            Log.d(TAG, "checkAndCreateSession: Waiting for both cameraDevice and surfaceTexture to be ready")
+            Log.d(TAG, "checkAndCreateSession: Waiting for both cameraDevice (${cameraDevice != null}) and surfaceTexture (${textureView?.surfaceTexture != null})")
             return
         }
         val handler = backgroundHandler
@@ -369,10 +404,35 @@ class Camera2Manager(
     }
 
     @Synchronized
+    private fun getOrCreatePreviewSurface(texture: SurfaceTexture): Surface {
+        val existing = previewSurface
+        if (existing != null && existing.isValid && currentSurfaceTexture === texture) {
+            return existing
+        }
+        try {
+            existing?.release()
+        } catch (e: Exception) {
+            // Ignore
+        }
+        currentSurfaceTexture = texture
+        val newSurface = Surface(texture)
+        previewSurface = newSurface
+        return newSurface
+    }
+
+    @Synchronized
     private fun createCaptureSession() {
         val device = cameraDevice ?: return
         val view = textureView ?: return
         val texture = view.surfaceTexture ?: return
+
+        if (captureSession != null) {
+            Log.d(TAG, "createCaptureSession: session already exists, starting repeating if requested")
+            if (shouldStartPreview) {
+                startRepeatingRequest()
+            }
+            return
+        }
 
         if (isSessionCreating) {
             Log.d(TAG, "createCaptureSession: already creating session, skipping duplicate call")
@@ -382,9 +442,7 @@ class Camera2Manager(
 
         try {
             texture.setDefaultBufferSize(previewSize.x, previewSize.y)
-            previewSurface?.release()
-            val pSurface = Surface(texture)
-            previewSurface = pSurface
+            val pSurface = getOrCreatePreviewSurface(texture)
 
             // Create ImageReader for barcode frame capture
             imageReader?.close()
@@ -416,8 +474,23 @@ class Camera2Manager(
                 addTarget(pSurface)
                 addTarget(reader.surface)
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-                set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+
+                // AF mode
+                val afModes = cameraCharacteristics?.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: intArrayOf()
+                val afMode = when {
+                    afModes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) -> CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+                    afModes.contains(CaptureRequest.CONTROL_AF_MODE_AUTO) -> CaptureRequest.CONTROL_AF_MODE_AUTO
+                    else -> CaptureRequest.CONTROL_AF_MODE_OFF
+                }
+                set(CaptureRequest.CONTROL_AF_MODE, afMode)
+
+                // AE mode
+                val aeModes = cameraCharacteristics?.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES) ?: intArrayOf()
+                val aeMode = when {
+                    aeModes.contains(CaptureRequest.CONTROL_AE_MODE_ON) -> CaptureRequest.CONTROL_AE_MODE_ON
+                    else -> CaptureRequest.CONTROL_AE_MODE_OFF
+                }
+                set(CaptureRequest.CONTROL_AE_MODE, aeMode)
             }
             previewRequestBuilder = builder
 
@@ -443,7 +516,17 @@ class Camera2Manager(
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
                         isSessionCreating = false
-                        Log.e(TAG, "Capture session configuration failed")
+                        Log.e(TAG, "Capture session configuration failed with size ${previewSize.x}x${previewSize.y}")
+
+                        // If 1080p failed, automatically fallback to 720p
+                        if (previewSize.x == 1920 && previewSize.y == 1080) {
+                            Log.w(TAG, "Retrying capture session with 720p fallback...")
+                            previewSize = Point(1280, 720)
+                            backgroundHandler?.post {
+                                createCaptureSession()
+                            }
+                            return
+                        }
                         onCameraError?.invoke(RuntimeException("Capture session configuration failed"))
                     }
                 },
@@ -478,6 +561,8 @@ class Camera2Manager(
         backgroundHandler?.post {
             if (captureSession != null && !isPreviewStarted) {
                 startRepeatingRequest()
+            } else if (captureSession == null) {
+                checkAndCreateSession()
             }
         }
     }
@@ -495,7 +580,7 @@ class Camera2Manager(
     }
 
     /**
-     * Closes camera, capture session, and image reader.
+     * Closes camera, capture session, and image reader synchronously.
      */
     fun closeCamera() {
         try {
@@ -503,15 +588,43 @@ class Camera2Manager(
             shouldStartPreview = false
             isPreviewStarted = false
             isSessionCreating = false
-            stopPreview()
-            captureSession?.close()
+            isCameraOpening = false
+            openRetryCount = 0
+
+            try {
+                captureSession?.stopRepeating()
+                captureSession?.abortCaptures()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            try {
+                captureSession?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
             captureSession = null
-            cameraDevice?.close()
+
+            try {
+                cameraDevice?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
             cameraDevice = null
-            imageReader?.close()
+
+            try {
+                imageReader?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
             imageReader = null
-            previewSurface?.release()
+
+            try {
+                previewSurface?.release()
+            } catch (e: Exception) {
+                // Ignore
+            }
             previewSurface = null
+            currentSurfaceTexture = null
             previewRequestBuilder = null
         } catch (e: Exception) {
             Log.e(TAG, "Error closing camera", e)

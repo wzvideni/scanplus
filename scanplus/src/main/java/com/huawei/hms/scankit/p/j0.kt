@@ -158,6 +158,9 @@ class j0(
     fun p() {
         try {
             Log.i(TAG, "startPreview invoked, currentState=$currentState")
+            if (currentState == b.CAMERA_CLOSED) {
+                m()
+            }
             camera2Manager.startPreview()
             currentState = b.PREVIEW_STARTED
         } catch (e: Exception) {
@@ -245,6 +248,9 @@ class j0(
         requireNotNull(textureView) { "TextureView must not be null" }
         Log.i(TAG, "attachTextureView invoked, currentState=$currentState")
         this.textureView = textureView
+        if (currentState == b.CAMERA_CLOSED) {
+            m()
+        }
         camera2Manager.attachTextureView(textureView)
         if (currentState.b() < b.CAMERA_INITIALED.b()) {
             currentState = b.CAMERA_INITIALED
