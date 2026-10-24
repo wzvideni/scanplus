@@ -88,11 +88,11 @@ object ImageConversionUtils {
 
         for (row in 0 until uvHeight) {
             vBuffer.position(row * vRowStride)
-            val vLength = Math.min(vRowStride, vBuffer.remaining())
+            val vLength = vRowStride.coerceAtMost(vBuffer.remaining())
             vBuffer.get(vRow, 0, vLength)
 
             uBuffer.position(row * uRowStride)
-            val uLength = Math.min(uRowStride, uBuffer.remaining())
+            val uLength = uRowStride.coerceAtMost(uBuffer.remaining())
             uBuffer.get(uRow, 0, uLength)
 
             for (col in 0 until uvWidth) {

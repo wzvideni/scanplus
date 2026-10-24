@@ -2,11 +2,13 @@ package com.huawei.hms.scankit
 
 import android.util.Log
 import com.huawei.hms.scankit.camera.CameraMode
+import com.huawei.hms.scankit.util.ScanLog
 
 /**
  * Global configuration options for ScanPlus.
  */
 object ScanPlusConfig {
+    private const val TAG = "ScanPlusConfig"
     /**
      * Selected camera backend mode:
      * - [CameraMode.AUTO] (Default): Automatically tries Camera1 first; if Camera1 fails to open or is
@@ -50,13 +52,17 @@ object ScanPlusConfig {
      * to this callback instead of directly calling [android.util.Log].
      */
     @JvmStatic
-    var logDelegate: ((priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit)? = null
+    var logDelegate: ((priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit)? =
+        null
 
     init {
         // Automatically silence Huawei HiAnalytics/HATool background logs by default
         try {
             com.huawei.hms.hatool.c.a(Int.MAX_VALUE)
-        } catch (ignored: Throwable) {}
+            ScanLog.d(TAG, "Huawei HATool HiAnalytics background logs silenced successfully")
+        } catch (e: Throwable) {
+            ScanLog.w(TAG, "Failed to silence Huawei HATool HiAnalytics background logs in init: ${e.message}", e)
+        }
     }
 
     /**
@@ -64,14 +70,20 @@ object ScanPlusConfig {
      */
     @JvmStatic
     fun disableAllLogs() {
-        isLogEnabled = false
-        minLogLevel = Int.MAX_VALUE
         try {
             com.huawei.hms.hatool.c.a(Int.MAX_VALUE)
-        } catch (ignored: Throwable) {}
+            ScanLog.d(TAG, "Huawei HATool background logs silenced successfully")
+        } catch (e: Throwable) {
+            ScanLog.w(TAG, "Failed to silence Huawei HATool background logs: ${e.message}", e)
+        }
         try {
             com.huawei.hms.scankit.p.w7.a(false)
-        } catch (ignored: Throwable) {}
+            ScanLog.d(TAG, "ScanKit internal engine logs (w7) disabled successfully")
+        } catch (e: Throwable) {
+            ScanLog.w(TAG, "Failed to disable ScanKit internal engine logs (w7): ${e.message}", e)
+        }
+        isLogEnabled = false
+        minLogLevel = Int.MAX_VALUE
     }
 
     /**
@@ -81,5 +93,11 @@ object ScanPlusConfig {
     fun enableAllLogs() {
         isLogEnabled = true
         minLogLevel = Log.VERBOSE
+        try {
+            com.huawei.hms.scankit.p.w7.a(true)
+            ScanLog.d(TAG, "ScanKit internal engine logs (w7) enabled successfully")
+        } catch (e: Throwable) {
+            ScanLog.w(TAG, "Failed to enable ScanKit internal engine logs (w7): ${e.message}", e)
+        }
     }
 }

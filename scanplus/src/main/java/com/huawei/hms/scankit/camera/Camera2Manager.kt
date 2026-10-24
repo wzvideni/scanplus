@@ -9,22 +9,28 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.SurfaceTexture
-import android.hardware.camera2.*
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.MeteringRectangle
 import android.media.ImageReader
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import com.huawei.hms.scankit.util.ScanLog
 import android.util.Range
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
 import com.huawei.hms.scankit.p.k0
 import com.huawei.hms.scankit.util.ImageConversionUtils
+import com.huawei.hms.scankit.util.ScanLog
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 /**
  * Modern Camera2 implementation replacing legacy Camera1 API.
@@ -36,12 +42,13 @@ import java.util.concurrent.TimeUnit
  */
 class Camera2Manager(
     private val context: Context,
-    private val lensFacing: Int = CameraCharacteristics.LENS_FACING_BACK
+    private val lensFacing: Int = CameraCharacteristics.LENS_FACING_BACK,
+    private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
 ) : ICameraManager {
     companion object {
         private const val TAG = "ScanKitCamera2"
-        private const val DEFAULT_PREVIEW_WIDTH = 1920
-        private const val DEFAULT_PREVIEW_HEIGHT = 1080
+        const val DEFAULT_PREVIEW_WIDTH = 1920
+        const val DEFAULT_PREVIEW_HEIGHT = 1080
     }
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -78,12 +85,16 @@ class Camera2Manager(
 
     // Torch & Status
     private var isTorchOn: Boolean = false
+
     @Volatile
     private var isPreviewStarted: Boolean = false
+
     @Volatile
     private var shouldStartPreview: Boolean = false
+
     @Volatile
     private var isSessionCreating: Boolean = false
+
     @Volatile
     private var isCameraOpening: Boolean = false
     private var openRetryCount = 0
@@ -149,7 +160,8 @@ class Camera2Manager(
 
     private fun initCharacteristics(characteristics: CameraCharacteristics) {
         sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
-        sensorActiveArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        sensorActiveArraySize =
+            characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
 
         // Zoom capabilities
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -158,11 +170,14 @@ class Camera2Manager(
                 minZoomRatio = range.lower
                 maxZoomRatio = range.upper
             } else {
-                maxZoomRatio = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
+                maxZoomRatio =
+                    characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
+                        ?: 1.0f
                 minZoomRatio = 1.0f
             }
         } else {
-            maxZoomRatio = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
+            maxZoomRatio =
+                characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
             minZoomRatio = 1.0f
         }
 
@@ -179,7 +194,8 @@ class Camera2Manager(
         zoomRatios = ratios
 
         // Exposure capabilities
-        exposureRange = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE) ?: Range(0, 0)
+        exposureRange =
+            characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE) ?: Range(0, 0)
         val stepRational = characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)
         exposureStep = stepRational?.toFloat() ?: 1.0f
     }
@@ -189,7 +205,7 @@ class Camera2Manager(
      */
     override fun attachTextureView(view: TextureView) {
         this.textureView = view
-        selectOptimalSize(view.width, view.height)
+        selectOptimalSize(targetResolution)
 
         if (view.isAvailable && view.surfaceTexture != null) {
             configureTransform(view.width, view.height)
@@ -251,20 +267,36 @@ class Camera2Manager(
         }
     }
 
-    private fun selectOptimalSize(targetW: Int, targetH: Int) {
+    private fun selectOptimalSize(target: Point = targetResolution) {
         val characteristics = cameraCharacteristics ?: return
-        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+        val map =
+            characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
         val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888)?.toList() ?: emptyList()
         val surfaceSizes = map.getOutputSizes(SurfaceTexture::class.java)?.toList() ?: emptyList()
         val commonSizes = yuvSizes.filter { surfaceSizes.contains(it) }
-        val choices = if (commonSizes.isNotEmpty()) commonSizes else if (surfaceSizes.isNotEmpty()) surfaceSizes else yuvSizes
+        val choices = commonSizes.ifEmpty { surfaceSizes.ifEmpty { yuvSizes } }
 
         if (choices.isEmpty()) return
 
+        // 1. If an exact match for target resolution exists, prioritize it (matching ScanKit contract)
+        if (target.x > 0 && target.y > 0) {
+            val maxT = maxOf(target.x, target.y)
+            val minT = minOf(target.x, target.y)
+            val exactMatch = choices.firstOrNull {
+                (it.width == target.x && it.height == target.y) ||
+                (it.width == maxT && it.height == minT)
+            }
+            if (exactMatch != null) {
+                previewSize = Point(exactMatch.width, exactMatch.height)
+                ScanLog.i(TAG, "Selected exact matching target preview size: ${previewSize.x} x ${previewSize.y}")
+                return
+            }
+        }
+
+        // 2. ScanKit AAR baseline preferences: 1080p -> 720p
         val size1080p = choices.firstOrNull { it.width == 1920 && it.height == 1080 }
         val size720p = choices.firstOrNull { it.width == 1280 && it.height == 720 }
 
-        // Match original ScanKit AAR preference: 1080p for highest recognition accuracy
         if (size1080p != null) {
             previewSize = Point(1920, 1080)
             ScanLog.i(TAG, "Selected preferred 1080p preview size: 1920 x 1080")
@@ -277,14 +309,20 @@ class Camera2Manager(
             return
         }
 
-        // Otherwise find closest 16:9 ratio
+        // Otherwise find closest ratio to target
         var bestSize: Size = choices[0]
         var minDiff = Double.MAX_VALUE
-        val targetRatio = 16.0 / 9.0
+        val targetRatio = if (target.x > 0 && target.y > 0) {
+            val max = maxOf(target.x, target.y).toDouble()
+            val min = minOf(target.x, target.y).toDouble().coerceAtLeast(1.0)
+            max / min
+        } else {
+            16.0 / 9.0
+        }
 
         for (size in choices) {
             val ratio = size.width.toDouble() / size.height.toDouble()
-            val diff = Math.abs(ratio - targetRatio)
+            val diff = abs(ratio - targetRatio)
             if (size.width in 640..1920 && diff < minDiff) {
                 minDiff = diff
                 bestSize = size
@@ -349,13 +387,16 @@ class Camera2Manager(
                     isCameraOpening = false
                     ScanLog.e(TAG, "Camera open error: $error (retry=$openRetryCount)")
 
-                    if ((error == CameraDevice.StateCallback.ERROR_CAMERA_IN_USE ||
-                         error == CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE ||
-                         error == CameraDevice.StateCallback.ERROR_CAMERA_DEVICE) &&
+                    if ((error == ERROR_CAMERA_IN_USE ||
+                                error == ERROR_MAX_CAMERAS_IN_USE ||
+                                error == ERROR_CAMERA_DEVICE) &&
                         openRetryCount < 3
                     ) {
                         openRetryCount++
-                        ScanLog.w(TAG, "Camera busy or device error, retrying open in 250ms (attempt $openRetryCount/3)...")
+                        ScanLog.w(
+                            TAG,
+                            "Camera busy or device error, retrying open in 250ms (attempt $openRetryCount/3)..."
+                        )
                         backgroundHandler?.postDelayed({
                             openCamera()
                         }, 250)
@@ -379,7 +420,10 @@ class Camera2Manager(
      */
     fun checkAndCreateSession() {
         if (cameraDevice == null || textureView?.surfaceTexture == null) {
-            ScanLog.d(TAG, "checkAndCreateSession: Waiting for both cameraDevice (${cameraDevice != null}) and surfaceTexture (${textureView?.surfaceTexture != null})")
+            ScanLog.d(
+                TAG,
+                "checkAndCreateSession: Waiting for both cameraDevice (${cameraDevice != null}) and surfaceTexture (${textureView?.surfaceTexture != null})"
+            )
             return
         }
         val handler = backgroundHandler
@@ -401,7 +445,7 @@ class Camera2Manager(
         try {
             existing?.release()
         } catch (e: Exception) {
-            // Ignore
+            ScanLog.d(TAG, "Exception releasing existing previewSurface: ${e.message}")
         }
         currentSurfaceTexture = texture
         val newSurface = Surface(texture)
@@ -416,7 +460,10 @@ class Camera2Manager(
         val texture = view.surfaceTexture ?: return
 
         if (captureSession != null) {
-            ScanLog.d(TAG, "createCaptureSession: session already exists, starting repeating if requested")
+            ScanLog.d(
+                TAG,
+                "createCaptureSession: session already exists, starting repeating if requested"
+            )
             if (shouldStartPreview) {
                 startRepeatingRequest()
             }
@@ -424,7 +471,10 @@ class Camera2Manager(
         }
 
         if (isSessionCreating) {
-            ScanLog.d(TAG, "createCaptureSession: already creating session, skipping duplicate call")
+            ScanLog.d(
+                TAG,
+                "createCaptureSession: already creating session, skipping duplicate call"
+            )
             return
         }
         isSessionCreating = true
@@ -465,7 +515,9 @@ class Camera2Manager(
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
 
                 // AF mode
-                val afModes = cameraCharacteristics?.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: intArrayOf()
+                val afModes =
+                    cameraCharacteristics?.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+                        ?: intArrayOf()
                 val afMode = when {
                     afModes.contains(CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE) -> CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
                     afModes.contains(CaptureRequest.CONTROL_AF_MODE_AUTO) -> CaptureRequest.CONTROL_AF_MODE_AUTO
@@ -474,7 +526,9 @@ class Camera2Manager(
                 set(CaptureRequest.CONTROL_AF_MODE, afMode)
 
                 // AE mode
-                val aeModes = cameraCharacteristics?.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES) ?: intArrayOf()
+                val aeModes =
+                    cameraCharacteristics?.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES)
+                        ?: intArrayOf()
                 val aeMode = when {
                     aeModes.contains(CaptureRequest.CONTROL_AE_MODE_ON) -> CaptureRequest.CONTROL_AE_MODE_ON
                     else -> CaptureRequest.CONTROL_AE_MODE_OFF
@@ -497,7 +551,10 @@ class Camera2Manager(
                         applyZoom()
                         applyTorch()
                         applyExposure()
-                        ScanLog.i(TAG, "CameraCaptureSession configured successfully, shouldStartPreview=$shouldStartPreview")
+                        ScanLog.i(
+                            TAG,
+                            "CameraCaptureSession configured successfully, shouldStartPreview=$shouldStartPreview"
+                        )
                         if (shouldStartPreview) {
                             startRepeatingRequest()
                         }
@@ -505,7 +562,10 @@ class Camera2Manager(
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
                         isSessionCreating = false
-                        ScanLog.e(TAG, "Capture session configuration failed with size ${previewSize.x}x${previewSize.y}")
+                        ScanLog.e(
+                            TAG,
+                            "Capture session configuration failed with size ${previewSize.x}x${previewSize.y}"
+                        )
 
                         // If 1080p failed, automatically fallback to 720p
                         if (previewSize.x == 1920 && previewSize.y == 1080) {
@@ -532,7 +592,10 @@ class Camera2Manager(
         val session = captureSession
         val builder = previewRequestBuilder
         if (session == null || builder == null) {
-            ScanLog.d(TAG, "startRepeatingRequest: session or builder not ready yet (session=${session != null}, builder=${builder != null})")
+            ScanLog.d(
+                TAG,
+                "startRepeatingRequest: session or builder not ready yet (session=${session != null}, builder=${builder != null})"
+            )
             return
         }
         try {
@@ -588,33 +651,33 @@ class Camera2Manager(
                 captureSession?.stopRepeating()
                 captureSession?.abortCaptures()
             } catch (e: Exception) {
-                // Ignore
+                ScanLog.d(TAG, "Exception during session stop/abort on close: ${e.message}")
             }
             try {
                 captureSession?.close()
             } catch (e: Exception) {
-                // Ignore
+                ScanLog.d(TAG, "Exception closing captureSession: ${e.message}")
             }
             captureSession = null
 
             try {
                 cameraDevice?.close()
             } catch (e: Exception) {
-                // Ignore
+                ScanLog.d(TAG, "Exception closing cameraDevice: ${e.message}")
             }
             cameraDevice = null
 
             try {
                 imageReader?.close()
             } catch (e: Exception) {
-                // Ignore
+                ScanLog.d(TAG, "Exception closing imageReader: ${e.message}")
             }
             imageReader = null
 
             try {
                 previewSurface?.release()
             } catch (e: Exception) {
-                // Ignore
+                ScanLog.d(TAG, "Exception releasing previewSurface: ${e.message}")
             }
             previewSurface = null
             currentSurfaceTexture = null
@@ -642,7 +705,8 @@ class Camera2Manager(
         val session = captureSession ?: return
 
         try {
-            val hasFlash = cameraCharacteristics?.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            val hasFlash =
+                cameraCharacteristics?.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             if (!hasFlash) {
                 ScanLog.w(TAG, "Flash not available on current camera")
                 return
@@ -746,7 +810,10 @@ class Camera2Manager(
         val builder = previewRequestBuilder ?: return
         try {
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
-            builder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+            builder.set(
+                CaptureRequest.CONTROL_AF_MODE,
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
+            )
             if (isPreviewStarted) {
                 session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             }

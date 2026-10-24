@@ -47,8 +47,10 @@ object ScanLog {
         if (delegate != null) {
             try {
                 delegate(priority, safeTag, safeMsg, tr)
-            } catch (ignored: Throwable) {}
-            return
+                return
+            } catch (e: Throwable) {
+                Log.w("ScanLog", "Custom logDelegate failed: ${e.message}, falling back to Logcat", e)
+            }
         }
 
         when (priority) {

@@ -5,14 +5,13 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.hardware.Camera
 import android.hardware.camera2.CameraCharacteristics
-import com.huawei.hms.scankit.util.ScanLog
-import android.util.Range
 import android.view.TextureView
 import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.camera.Camera1Manager
 import com.huawei.hms.scankit.camera.Camera2Manager
 import com.huawei.hms.scankit.camera.CameraMode
 import com.huawei.hms.scankit.camera.ICameraManager
+import com.huawei.hms.scankit.util.ScanLog
 
 /**
  * Universal Camera Manager for ScanKit, integrating both Camera1 and Camera2.
@@ -60,13 +59,19 @@ class j0(
         fun b(): Int = a
 
         companion object {
-            @JvmField val CAMERA_CLOSED = CLOSED_STATE
-            @JvmField val CAMERA_OPENED = c
-            @JvmField val CAMERA_INITIALED = d
-            @JvmField val PREVIEW_STARTED = e
-            @JvmField val PREVIEW_STOPPED = f
+            @JvmField
+            val CAMERA_CLOSED = CLOSED_STATE
+            @JvmField
+            val CAMERA_OPENED = c
+            @JvmField
+            val CAMERA_INITIALED = d
+            @JvmField
+            val PREVIEW_STARTED = e
+            @JvmField
+            val PREVIEW_STOPPED = f
 
-            @JvmField val b = CLOSED_STATE
+            @JvmField
+            val b = CLOSED_STATE
         }
     }
 
@@ -103,7 +108,10 @@ class j0(
         Camera1Manager(
             context = context,
             lensFacing = facing,
-            targetResolution = e0Var.a() ?: Point(Camera1Manager.DEFAULT_PREVIEW_WIDTH, Camera1Manager.DEFAULT_PREVIEW_HEIGHT),
+            targetResolution = e0Var.a() ?: Point(
+                Camera1Manager.DEFAULT_PREVIEW_WIDTH,
+                Camera1Manager.DEFAULT_PREVIEW_HEIGHT
+            ),
             recordingHint = e0Var.e(),
             displayOrientation = e0Var.d()
         )
@@ -115,7 +123,14 @@ class j0(
         } else {
             CameraCharacteristics.LENS_FACING_BACK
         }
-        Camera2Manager(context, facing)
+        Camera2Manager(
+            context = context,
+            lensFacing = facing,
+            targetResolution = e0Var.a() ?: Point(
+                Camera2Manager.DEFAULT_PREVIEW_WIDTH,
+                Camera2Manager.DEFAULT_PREVIEW_HEIGHT
+            )
+        )
     }
 
     private fun bindCallbacks(manager: ICameraManager, backendName: String) {
@@ -166,6 +181,7 @@ class j0(
                         statusListener?.b()
                     }
                 }
+
                 CameraMode.CAMERA2 -> {
                     try {
                         bindCallbacks(camera2Manager, "Camera2")
@@ -179,6 +195,7 @@ class j0(
                         statusListener?.b()
                     }
                 }
+
                 CameraMode.AUTO -> {
                     var c1Success = false
                     try {
@@ -192,7 +209,10 @@ class j0(
                         c1Success = true
                         ScanLog.i(TAG, "AUTO mode: Camera1 opened successfully")
                     } catch (e: Throwable) {
-                        ScanLog.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}. Falling back to Camera2...")
+                        ScanLog.w(
+                            TAG,
+                            "Camera1 open failed in AUTO mode: ${e.message}. Falling back to Camera2..."
+                        )
                     }
 
                     if (!c1Success) {
@@ -273,7 +293,10 @@ class j0(
                 mgr.startPreview()
             } catch (e: Exception) {
                 if (cameraMode == CameraMode.AUTO && mgr === camera1Manager) {
-                    ScanLog.w(TAG, "Camera1 startPreview failed in AUTO mode, falling back to Camera2: ${e.message}")
+                    ScanLog.w(
+                        TAG,
+                        "Camera1 startPreview failed in AUTO mode, falling back to Camera2: ${e.message}"
+                    )
                     mgr.closeCamera()
                     bindCallbacks(camera2Manager, "Camera2")
                     camera2Manager.openCamera()
@@ -311,7 +334,10 @@ class j0(
     }
 
     @Synchronized
-    fun e(): Point = activeManager?.getPreviewSize() ?: Point(Camera1Manager.DEFAULT_PREVIEW_WIDTH, Camera1Manager.DEFAULT_PREVIEW_HEIGHT)
+    fun e(): Point = activeManager?.getPreviewSize() ?: Point(
+        Camera1Manager.DEFAULT_PREVIEW_WIDTH,
+        Camera1Manager.DEFAULT_PREVIEW_HEIGHT
+    )
 
     @Synchronized
     fun n() {

@@ -1,6 +1,5 @@
 package com.huawei.hms.scankit.camera
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.Matrix
@@ -9,14 +8,14 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.hardware.Camera
 import android.os.Build
-import com.huawei.hms.scankit.util.ScanLog
 import android.util.Range
-import android.view.Surface
 import android.view.TextureView
-import android.view.WindowManager
 import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.p.k0
+import com.huawei.hms.scankit.util.ScanLog
 import java.io.IOException
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * Robust Camera1 (android.hardware.Camera) implementation for ScanKit.
@@ -45,8 +44,10 @@ class Camera1Manager(
     private var sensorOrientation: Int = 90
 
     private var isTorchOn: Boolean = false
+
     @Volatile
     private var isOpen: Boolean = false
+
     @Volatile
     private var isPreviewing: Boolean = false
 
@@ -72,11 +73,12 @@ class Camera1Manager(
     override var onCameraError: ((Throwable) -> Unit)? = null
 
     init {
-        val targetFacing = if (lensFacing == 1 || lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            Camera.CameraInfo.CAMERA_FACING_FRONT
-        } else {
-            Camera.CameraInfo.CAMERA_FACING_BACK
-        }
+        val targetFacing =
+            if (lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                Camera.CameraInfo.CAMERA_FACING_FRONT
+            } else {
+                Camera.CameraInfo.CAMERA_FACING_BACK
+            }
         cameraId = findCameraId(targetFacing)
     }
 
@@ -106,7 +108,8 @@ class Camera1Manager(
 
         try {
             ScanLog.i(TAG, "Opening Camera1 with cameraId=$cameraId")
-            val cam = Camera.open(cameraId) ?: throw IOException("Camera.open($cameraId) returned null")
+            val cam =
+                Camera.open(cameraId) ?: throw IOException("Camera.open($cameraId) returned null")
             this.camera = cam
 
             initCameraParameters(cam)
@@ -115,7 +118,7 @@ class Camera1Manager(
 
             // If TextureView was attached before opening, bind it now
             val tv = textureView
-            if (tv != null && tv.surfaceTexture != null) {
+            if (tv?.surfaceTexture != null) {
                 cam.setPreviewTexture(tv.surfaceTexture)
                 val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
                 cam.setDisplayOrientation(finalOrientation)
@@ -143,10 +146,13 @@ class Camera1Manager(
             defaultFocusMode = when {
                 supportedFocusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE) ->
                     Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE
+
                 supportedFocusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO) ->
                     Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO
+
                 supportedFocusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO) ->
                     Camera.Parameters.FOCUS_MODE_AUTO
+
                 else -> supportedFocusModes[0]
             }
             parameters.focusMode = defaultFocusMode
@@ -180,9 +186,14 @@ class Camera1Manager(
         // 6. Vendor scan optimization reflection (matching f0.java line 135)
         if (Build.VERSION.SDK_INT >= 30) {
             try {
-                val method = Camera.Parameters::class.java.getMethod("setScanOptEnable", Boolean::class.javaPrimitiveType)
+                val method = Camera.Parameters::class.java.getMethod(
+                    "setScanOptEnable",
+                    Boolean::class.javaPrimitiveType
+                )
                 method.invoke(parameters, true)
-            } catch (ignored: Exception) {}
+            } catch (e: Exception) {
+                ScanLog.d(TAG, "Vendor setScanOptEnable not supported: ${e.message}")
+            }
         }
 
         // 7. Orientation - match original ScanKit contract:
@@ -201,8 +212,13 @@ class Camera1Manager(
      * Exact resolution matching algorithm from original f0.java.
      */
     private fun selectBestPreviewSize(parameters: Camera.Parameters, target: Point): Point {
-        val supported = parameters.supportedPreviewSizes ?: return Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
-        val targetRatio = target.x.toDouble() / target.y.toDouble().coerceAtLeast(1.0)
+        val supported = parameters.supportedPreviewSizes ?: return Point(
+            DEFAULT_PREVIEW_WIDTH,
+            DEFAULT_PREVIEW_HEIGHT
+        )
+        val maxT = maxOf(target.x, target.y)
+        val minT = minOf(target.x, target.y)
+        val targetRatio = maxT.toDouble() / minT.toDouble().coerceAtLeast(1.0)
 
         var bestWidth = 0
         var bestHeight = 0
@@ -211,12 +227,12 @@ class Camera1Manager(
         for (size in supported) {
             val w = size.width
             val h = size.height
-            if (w == target.x && h == target.y) {
+            if ((w == target.x && h == target.y) || (w == maxT && h == minT)) {
                 return Point(w, h)
             }
             if (w * h >= 153600) { // At least 640x480 resolution
                 val ratio = w.toDouble() / h.toDouble()
-                val diff = Math.abs(ratio - targetRatio)
+                val diff = abs(ratio - targetRatio)
                 if (diff < minDiff) {
                     minDiff = diff
                     bestWidth = w
@@ -345,7 +361,8 @@ class Camera1Manager(
             val params = cam.parameters
             val supportedFlash = params.supportedFlashModes
             if (!supportedFlash.isNullOrEmpty()) {
-                val mode = if (enable) Camera.Parameters.FLASH_MODE_TORCH else Camera.Parameters.FLASH_MODE_OFF
+                val mode =
+                    if (enable) Camera.Parameters.FLASH_MODE_TORCH else Camera.Parameters.FLASH_MODE_OFF
                 if (supportedFlash.contains(mode)) {
                     params.flashMode = mode
                     cam.parameters = params
@@ -382,7 +399,7 @@ class Camera1Manager(
         var minDiff = Int.MAX_VALUE
 
         for ((idx, r) in zoomRatios.withIndex()) {
-            val diff = Math.abs(r - targetRatioInt)
+            val diff = abs(r - targetRatioInt)
             if (diff < minDiff) {
                 minDiff = diff
                 closestIndex = idx
@@ -424,7 +441,12 @@ class Camera1Manager(
         try {
             cam.cancelAutoFocus()
             val params = cam.parameters
-            val areaRect = mapAreaToCameraCoordinates(rect.centerX(), rect.centerY(), previewSize.x, previewSize.y)
+            val areaRect = mapAreaToCameraCoordinates(
+                rect.centerX(),
+                rect.centerY(),
+                previewSize.x,
+                previewSize.y
+            )
 
             if (params.maxNumFocusAreas > 0) {
                 params.focusAreas = listOf(Camera.Area(areaRect, 1000))
@@ -446,7 +468,9 @@ class Camera1Manager(
                         p.focusMode = previousFocus
                         currentCam.parameters = p
                     }
-                } catch (ignored: Exception) {}
+                } catch (e: Exception) {
+                    ScanLog.d(TAG, "Failed to restore focus mode in autoFocus callback: ${e.message}")
+                }
                 tapFocusCount = 2
             }
         } catch (e: Exception) {
@@ -455,7 +479,12 @@ class Camera1Manager(
         }
     }
 
-    private fun mapAreaToCameraCoordinates(centerX: Int, centerY: Int, width: Int, height: Int): Rect {
+    private fun mapAreaToCameraCoordinates(
+        centerX: Int,
+        centerY: Int,
+        width: Int,
+        height: Int
+    ): Rect {
         val x = ((centerX.toFloat() / width) * 2000f - 1000f).toInt()
         val y = ((centerY.toFloat() / height) * 2000f - 1000f).toInt()
 
@@ -466,17 +495,20 @@ class Camera1Manager(
 
         val rectF = RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
         val matrix = Matrix()
-        matrix.setScale(if (lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) -1.0f else 1.0f, 1.0f)
+        matrix.setScale(
+            if (lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) -1.0f else 1.0f,
+            1.0f
+        )
         matrix.postRotate(displayOrientation.toFloat())
         val invertMatrix = Matrix()
         matrix.invert(invertMatrix)
         invertMatrix.mapRect(rectF)
 
         return Rect(
-            Math.round(rectF.left).coerceIn(-1000, 1000),
-            Math.round(rectF.top).coerceIn(-1000, 1000),
-            Math.round(rectF.right).coerceIn(-1000, 1000),
-            Math.round(rectF.bottom).coerceIn(-1000, 1000)
+            rectF.left.roundToInt().coerceIn(-1000, 1000),
+            rectF.top.roundToInt().coerceIn(-1000, 1000),
+            rectF.right.roundToInt().coerceIn(-1000, 1000),
+            rectF.bottom.roundToInt().coerceIn(-1000, 1000)
         )
     }
 
