@@ -52,6 +52,13 @@ object ScanPlusConfig {
     @JvmStatic
     var logDelegate: ((priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit)? = null
 
+    init {
+        // Automatically silence Huawei HiAnalytics/HATool background logs by default
+        try {
+            com.huawei.hms.hatool.c.a(Int.MAX_VALUE)
+        } catch (ignored: Throwable) {}
+    }
+
     /**
      * Completely disables all logs (including errors and warnings).
      */
@@ -59,6 +66,12 @@ object ScanPlusConfig {
     fun disableAllLogs() {
         isLogEnabled = false
         minLogLevel = Int.MAX_VALUE
+        try {
+            com.huawei.hms.hatool.c.a(Int.MAX_VALUE)
+        } catch (ignored: Throwable) {}
+        try {
+            com.huawei.hms.scankit.p.w7.a(false)
+        } catch (ignored: Throwable) {}
     }
 
     /**
