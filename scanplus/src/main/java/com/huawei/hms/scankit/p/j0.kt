@@ -3,22 +3,47 @@ package com.huawei.hms.scankit.p
 import android.content.Context
 import android.graphics.Point
 import android.graphics.Rect
+import android.hardware.Camera
 import android.hardware.camera2.CameraCharacteristics
 import android.util.Log
+import android.util.Range
 import android.view.TextureView
+import com.huawei.hms.scankit.ScanPlusConfig
+import com.huawei.hms.scankit.camera.Camera1Manager
 import com.huawei.hms.scankit.camera.Camera2Manager
+import com.huawei.hms.scankit.camera.CameraMode
+import com.huawei.hms.scankit.camera.ICameraManager
 
 /**
- * Modern Camera2 implementation of [j0], replacing the obsolete Camera1 API.
- * Fully compatible with ScanKit's capture engine (RemoteView, ScanKitActivity, CaptureHelper).
+ * Universal Camera Manager for ScanKit, integrating both Camera1 and Camera2.
+ * Supports [CameraMode.AUTO], [CameraMode.CAMERA1], and [CameraMode.CAMERA2].
+ *
+ * In [CameraMode.AUTO], it attempts Camera1 first for maximum compatibility; if Camera1 fails
+ * on modern or vendor-restricted devices, it automatically falls back to modern Camera2.
  */
+@Suppress("DEPRECATION")
 class j0(
     private val context: Context,
     private val e0Var: e0
 ) {
     companion object {
         private const val TAG = "CameraManager"
+
+        /**
+         * Global default camera mode. Can also be set via [ScanPlusConfig.cameraMode].
+         */
+        @JvmStatic
+        var defaultCameraMode: CameraMode
+            get() = ScanPlusConfig.cameraMode
+            set(value) {
+                ScanPlusConfig.cameraMode = value
+            }
     }
+
+    /**
+     * Camera backend mode for this instance. Defaults to [ScanPlusConfig.cameraMode].
+     */
+    var cameraMode: CameraMode = ScanPlusConfig.cameraMode
 
     /**
      * Camera state enum matching ScanKit contract.
@@ -67,38 +92,51 @@ class j0(
     private var torchStatus: String = "off"
     private var textureView: TextureView? = null
 
+    private var activeManager: ICameraManager? = null
+
+    private val camera1Manager: Camera1Manager by lazy {
+        val facing = if (e0Var.b() == 1) {
+            Camera.CameraInfo.CAMERA_FACING_FRONT
+        } else {
+            Camera.CameraInfo.CAMERA_FACING_BACK
+        }
+        Camera1Manager(context, facing)
+    }
+
     private val camera2Manager: Camera2Manager by lazy {
         val facing = if (e0Var.b() == 1) {
             CameraCharacteristics.LENS_FACING_FRONT
         } else {
             CameraCharacteristics.LENS_FACING_BACK
         }
-        Camera2Manager(context, facing).apply {
-            onCameraOpened = {
-                synchronized(this@j0) {
-                    if (currentState == b.CAMERA_CLOSED) {
-                        currentState = b.CAMERA_OPENED
-                    }
-                    statusListener?.a()
+        Camera2Manager(context, facing)
+    }
+
+    private fun bindCallbacks(manager: ICameraManager, backendName: String) {
+        manager.onCameraOpened = {
+            synchronized(this@j0) {
+                if (currentState == b.CAMERA_CLOSED) {
+                    currentState = b.CAMERA_OPENED
                 }
+                statusListener?.a()
             }
-            onCameraClosed = {
-                synchronized(this@j0) {
-                    currentState = b.CAMERA_CLOSED
-                    statusListener?.c()
-                }
+        }
+        manager.onCameraClosed = {
+            synchronized(this@j0) {
+                currentState = b.CAMERA_CLOSED
+                statusListener?.c()
             }
-            onCameraError = { error ->
-                Log.e(TAG, "Camera2 error: ${error.message}", error)
-                synchronized(this@j0) {
-                    statusListener?.b()
-                }
+        }
+        manager.onCameraError = { error ->
+            Log.e(TAG, "$backendName error: ${error.message}", error)
+            synchronized(this@j0) {
+                statusListener?.b()
             }
-            onFrameAvailable = { nv21Bytes, _, _ ->
-                synchronized(this@j0) {
-                    if (currentState == b.PREVIEW_STARTED) {
-                        frameCallback?.a(nv21Bytes)
-                    }
+        }
+        manager.onFrameAvailable = { nv21Bytes, _, _ ->
+            synchronized(this@j0) {
+                if (currentState == b.PREVIEW_STARTED) {
+                    frameCallback?.a(nv21Bytes)
                 }
             }
         }
@@ -106,23 +144,73 @@ class j0(
 
     @Synchronized
     fun m() {
-        Log.i(TAG, "Camera2 onResume")
+        Log.i(TAG, "Camera onResume, mode=$cameraMode")
         if (currentState == b.CAMERA_CLOSED || currentState == b.PREVIEW_STOPPED) {
-            try {
-                camera2Manager.openCamera()
-                if (currentState.b() < b.CAMERA_OPENED.b()) {
-                    currentState = b.CAMERA_OPENED
+            when (cameraMode) {
+                CameraMode.CAMERA1 -> {
+                    try {
+                        bindCallbacks(camera1Manager, "Camera1")
+                        camera1Manager.openCamera()
+                        activeManager = camera1Manager
+                        if (currentState.b() < b.CAMERA_OPENED.b()) {
+                            currentState = b.CAMERA_OPENED
+                        }
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Camera1 open failed: ${e.message}", e)
+                        statusListener?.b()
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Camera2 open failed: ${e.message}", e)
-                statusListener?.b()
+                CameraMode.CAMERA2 -> {
+                    try {
+                        bindCallbacks(camera2Manager, "Camera2")
+                        camera2Manager.openCamera()
+                        activeManager = camera2Manager
+                        if (currentState.b() < b.CAMERA_OPENED.b()) {
+                            currentState = b.CAMERA_OPENED
+                        }
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Camera2 open failed: ${e.message}", e)
+                        statusListener?.b()
+                    }
+                }
+                CameraMode.AUTO -> {
+                    var c1Success = false
+                    try {
+                        Log.i(TAG, "AUTO mode: Trying Camera1 first...")
+                        bindCallbacks(camera1Manager, "Camera1")
+                        camera1Manager.openCamera()
+                        activeManager = camera1Manager
+                        if (currentState.b() < b.CAMERA_OPENED.b()) {
+                            currentState = b.CAMERA_OPENED
+                        }
+                        c1Success = true
+                        Log.i(TAG, "AUTO mode: Camera1 opened successfully")
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}. Falling back to Camera2...")
+                    }
+
+                    if (!c1Success) {
+                        try {
+                            bindCallbacks(camera2Manager, "Camera2")
+                            camera2Manager.openCamera()
+                            activeManager = camera2Manager
+                            if (currentState.b() < b.CAMERA_OPENED.b()) {
+                                currentState = b.CAMERA_OPENED
+                            }
+                            Log.i(TAG, "AUTO mode: Camera2 fallback opened successfully")
+                        } catch (e: Throwable) {
+                            Log.e(TAG, "Camera2 fallback also failed: ${e.message}", e)
+                            statusListener?.b()
+                        }
+                    }
+                }
             }
         }
     }
 
     @Synchronized
     fun l() {
-        Log.i(TAG, "Camera2 onPause")
+        Log.i(TAG, "Camera onPause")
         try {
             if (currentState.b() == b.PREVIEW_STARTED.b()) {
                 a()
@@ -133,11 +221,12 @@ class j0(
             }
             if (currentState.b() >= b.CAMERA_OPENED.b()) {
                 currentState = b.CAMERA_CLOSED
-                camera2Manager.closeCamera()
+                activeManager?.closeCamera()
+                activeManager = null
                 statusListener?.c()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Camera2 onPause error", e)
+            Log.e(TAG, "Camera onPause error", e)
         }
     }
 
@@ -155,10 +244,10 @@ class j0(
         try {
             if (currentState.b() < b.CAMERA_OPENED.b()) return
             if ("torch" == str) {
-                camera2Manager.setTorch(true)
+                activeManager?.setTorch(true)
                 torchStatus = "torch"
             } else if ("off" == str) {
-                camera2Manager.setTorch(false)
+                activeManager?.setTorch(false)
                 torchStatus = "off"
             }
         } catch (e: Exception) {
@@ -173,7 +262,22 @@ class j0(
             if (currentState == b.CAMERA_CLOSED) {
                 m()
             }
-            camera2Manager.startPreview()
+            val mgr = activeManager ?: return
+            try {
+                mgr.startPreview()
+            } catch (e: Exception) {
+                if (cameraMode == CameraMode.AUTO && mgr === camera1Manager) {
+                    Log.w(TAG, "Camera1 startPreview failed in AUTO mode, falling back to Camera2: ${e.message}")
+                    mgr.closeCamera()
+                    bindCallbacks(camera2Manager, "Camera2")
+                    camera2Manager.openCamera()
+                    textureView?.let { camera2Manager.attachTextureView(it) }
+                    camera2Manager.startPreview()
+                    activeManager = camera2Manager
+                } else {
+                    throw e
+                }
+            }
             currentState = b.PREVIEW_STARTED
         } catch (e: Exception) {
             Log.w(TAG, "startPreview error", e)
@@ -183,7 +287,7 @@ class j0(
     @Synchronized
     fun q() {
         try {
-            camera2Manager.stopPreview()
+            activeManager?.stopPreview()
             currentState = b.PREVIEW_STOPPED
         } catch (e: Exception) {
             Log.w(TAG, "stopPreview error", e)
@@ -192,16 +296,16 @@ class j0(
 
     @Synchronized
     fun o() {
-        // Frame request trigger - in Camera2 frames stream continuously via ImageReader
+        // Frame request trigger - streaming is continuous in both Camera1 and Camera2 backends
     }
 
     @Synchronized
     fun a() {
-        camera2Manager.cancelAutoFocus()
+        activeManager?.cancelAutoFocus()
     }
 
     @Synchronized
-    fun e(): Point = camera2Manager.getPreviewSize()
+    fun e(): Point = activeManager?.getPreviewSize() ?: Point(1280, 720)
 
     @Synchronized
     fun n() {
@@ -216,14 +320,20 @@ class j0(
 
     @Synchronized
     fun b(): g0 {
-        val range = camera2Manager.getExposureRange()
-        return g0(range.upper, range.lower, camera2Manager.getExposureCompensation(), camera2Manager.getExposureStep())
+        val range = activeManager?.getExposureRange() ?: Range(0, 0)
+        return g0(
+            range.upper,
+            range.lower,
+            activeManager?.getExposureCompensation() ?: 0,
+            activeManager?.getExposureStep() ?: 1.0f
+        )
     }
 
     @Synchronized
     fun g(): m0 {
-        val ratios = camera2Manager.getZoomRatios()
-        return m0(ratios.size - 1, camera2Manager.getZoomIndex(), ratios)
+        val ratios = activeManager?.getZoomRatios() ?: listOf(100)
+        val currentIndex = activeManager?.getZoomIndex() ?: 0
+        return m0(ratios.size - 1, currentIndex, ratios)
     }
 
     @Synchronized
@@ -241,18 +351,22 @@ class j0(
     @JvmName("b")
     fun setDisplayOrientation(i: Int) {
         e0Var.a(i)
+        val mgr = activeManager
+        if (mgr is Camera1Manager) {
+            mgr.setDisplayOrientation(i)
+        }
     }
 
     @Synchronized
     fun c(i: Int) {
         if (currentState == b.CAMERA_CLOSED) return
-        camera2Manager.setExposureCompensation(i)
+        activeManager?.setExposureCompensation(i)
     }
 
     @Synchronized
     fun d(i: Int) {
         if (currentState == b.CAMERA_CLOSED) return
-        camera2Manager.setZoomIndex(i)
+        activeManager?.setZoomIndex(i)
     }
 
     @Synchronized
@@ -263,7 +377,7 @@ class j0(
         if (currentState == b.CAMERA_CLOSED) {
             m()
         }
-        camera2Manager.attachTextureView(textureView)
+        activeManager?.attachTextureView(textureView)
         if (currentState.b() < b.CAMERA_INITIALED.b()) {
             currentState = b.CAMERA_INITIALED
         }
@@ -271,7 +385,7 @@ class j0(
 
     @Synchronized
     fun a(rect: Rect?, z: Boolean) {
-        camera2Manager.focusOnArea(rect)
+        activeManager?.focusOnArea(rect)
     }
 
     @Synchronized
@@ -279,7 +393,7 @@ class j0(
         if (list.isNullOrEmpty()) return
         val first = list[0]
         if (first is k0.a) {
-            camera2Manager.focusOnArea(first.a)
+            activeManager?.focusOnArea(first.a)
         }
     }
 

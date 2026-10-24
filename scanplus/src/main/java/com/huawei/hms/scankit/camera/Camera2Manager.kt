@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit
 class Camera2Manager(
     private val context: Context,
     private val lensFacing: Int = CameraCharacteristics.LENS_FACING_BACK
-) {
+) : ICameraManager {
     companion object {
         private const val TAG = "ScanKitCamera2"
         private const val DEFAULT_PREVIEW_WIDTH = 1280
@@ -93,10 +93,10 @@ class Camera2Manager(
     private var frameBuffer: ByteArray? = null
 
     // Listeners
-    var onFrameAvailable: ((ByteArray, Int, Int) -> Unit)? = null
-    var onCameraOpened: (() -> Unit)? = null
-    var onCameraClosed: (() -> Unit)? = null
-    var onCameraError: ((Throwable) -> Unit)? = null
+    override var onFrameAvailable: ((ByteArray, Int, Int) -> Unit)? = null
+    override var onCameraOpened: (() -> Unit)? = null
+    override var onCameraClosed: (() -> Unit)? = null
+    override var onCameraError: ((Throwable) -> Unit)? = null
 
     init {
         findCameraId()
@@ -186,7 +186,7 @@ class Camera2Manager(
     /**
      * Connects preview TextureView and initializes camera preview size.
      */
-    fun attachTextureView(view: TextureView) {
+    override fun attachTextureView(view: TextureView) {
         this.textureView = view
         selectOptimalSize(view.width, view.height)
 
@@ -310,7 +310,7 @@ class Camera2Manager(
      * Opens Camera2 device. Handles retries automatically if camera service is busy.
      */
     @SuppressLint("MissingPermission")
-    fun openCamera() {
+    override fun openCamera() {
         startBackgroundThread()
         if (cameraDevice != null) {
             Log.d(TAG, "openCamera: cameraDevice already open")
@@ -555,7 +555,7 @@ class Camera2Manager(
         }
     }
 
-    fun startPreview() {
+    override fun startPreview() {
         Log.i(TAG, "startPreview called, captureSession=${captureSession != null}")
         shouldStartPreview = true
         backgroundHandler?.post {
@@ -567,7 +567,7 @@ class Camera2Manager(
         }
     }
 
-    fun stopPreview() {
+    override fun stopPreview() {
         shouldStartPreview = false
         backgroundHandler?.post {
             try {
@@ -582,7 +582,7 @@ class Camera2Manager(
     /**
      * Closes camera, capture session, and image reader synchronously.
      */
-    fun closeCamera() {
+    override fun closeCamera() {
         try {
             cameraOpenCloseLock.acquire()
             shouldStartPreview = false
@@ -637,12 +637,12 @@ class Camera2Manager(
 
     // --- Torch / Flash Control ---
 
-    fun setTorch(enable: Boolean) {
+    override fun setTorch(enable: Boolean) {
         isTorchOn = enable
         applyTorch()
     }
 
-    fun getTorch(): Boolean = isTorchOn
+    override fun getTorch(): Boolean = isTorchOn
 
     private fun applyTorch() {
         val builder = previewRequestBuilder ?: return
@@ -670,25 +670,25 @@ class Camera2Manager(
 
     // --- Zoom Control ---
 
-    fun setZoomIndex(index: Int) {
+    override fun setZoomIndex(index: Int) {
         val clampedIndex = index.coerceIn(0, zoomRatios.size - 1)
         currentZoomIndex = clampedIndex
         currentZoomRatio = zoomRatios[clampedIndex] / 100.0f
         applyZoom()
     }
 
-    fun setZoomRatio(ratio: Float) {
+    override fun setZoomRatio(ratio: Float) {
         currentZoomRatio = ratio.coerceIn(minZoomRatio, maxZoomRatio)
         applyZoom()
     }
 
-    fun getZoomIndex(): Int = currentZoomIndex
+    override fun getZoomIndex(): Int = currentZoomIndex
 
-    fun getZoomRatios(): List<Int> = zoomRatios
+    override fun getZoomRatios(): List<Int> = zoomRatios
 
-    fun getMaxZoomRatio(): Float = maxZoomRatio
+    override fun getMaxZoomRatio(): Float = maxZoomRatio
 
-    fun getCurrentZoomRatio(): Float = currentZoomRatio
+    override fun getCurrentZoomRatio(): Float = currentZoomRatio
 
     private fun applyZoom() {
         val builder = previewRequestBuilder ?: return
@@ -718,7 +718,7 @@ class Camera2Manager(
 
     // --- Tap-to-Focus & Metering ---
 
-    fun focusOnArea(rect: Rect?) {
+    override fun focusOnArea(rect: Rect?) {
         val session = captureSession ?: return
         val builder = previewRequestBuilder ?: return
         val activeArray = sensorActiveArraySize ?: return
@@ -748,7 +748,7 @@ class Camera2Manager(
         }
     }
 
-    fun cancelAutoFocus() {
+    override fun cancelAutoFocus() {
         val session = captureSession ?: return
         val builder = previewRequestBuilder ?: return
         try {
@@ -764,16 +764,16 @@ class Camera2Manager(
 
     // --- Exposure Control ---
 
-    fun setExposureCompensation(value: Int) {
+    override fun setExposureCompensation(value: Int) {
         currentExposure = value.coerceIn(exposureRange.lower, exposureRange.upper)
         applyExposure()
     }
 
-    fun getExposureCompensation(): Int = currentExposure
+    override fun getExposureCompensation(): Int = currentExposure
 
-    fun getExposureRange(): Range<Int> = exposureRange
+    override fun getExposureRange(): Range<Int> = exposureRange
 
-    fun getExposureStep(): Float = exposureStep
+    override fun getExposureStep(): Float = exposureStep
 
     private fun applyExposure() {
         val builder = previewRequestBuilder ?: return
@@ -788,7 +788,7 @@ class Camera2Manager(
         }
     }
 
-    fun getPreviewSize(): Point = Point(previewSize.x, previewSize.y)
+    override fun getPreviewSize(): Point = Point(previewSize.x, previewSize.y)
 
-    fun getSensorOrientation(): Int = sensorOrientation
+    override fun getSensorOrientation(): Int = sensorOrientation
 }

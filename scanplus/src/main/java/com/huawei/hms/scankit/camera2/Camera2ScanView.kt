@@ -9,6 +9,8 @@ import android.view.*
 import android.widget.FrameLayout
 import com.huawei.hms.ml.scan.HmsScan
 import com.huawei.hms.ml.scan.HmsScanBase
+import com.huawei.hms.scankit.ScanPlusConfig
+import com.huawei.hms.scankit.camera.CameraMode
 
 /**
  * Modern Android View combining Camera2 preview with an animated viewfinder overlay.
@@ -30,6 +32,12 @@ class Camera2ScanView @JvmOverloads constructor(
         set(value) {
             field = value
             scanManager?.onScanResult = value
+        }
+
+    var cameraMode: CameraMode = ScanPlusConfig.cameraMode
+        set(value) {
+            field = value
+            scanManager?.cameraMode = value
         }
 
     init {
@@ -60,7 +68,7 @@ class Camera2ScanView @JvmOverloads constructor(
 
     private fun ensureManager(): Camera2ScanManager {
         if (scanManager == null) {
-            scanManager = Camera2ScanManager(context, HmsScanBase.ALL_SCAN_TYPE).also { mgr ->
+            scanManager = Camera2ScanManager(context, HmsScanBase.ALL_SCAN_TYPE, true, cameraMode).also { mgr ->
                 mgr.onScanResult = onScanResult
             }
         }
