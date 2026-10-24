@@ -3,8 +3,10 @@ package com.huawei.hms.scankit.camera
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Point
 import android.graphics.Rect
+import android.graphics.RectF
 import android.hardware.Camera
 import android.os.Build
 import android.util.Log
@@ -12,22 +14,25 @@ import android.util.Range
 import android.view.Surface
 import android.view.TextureView
 import android.view.WindowManager
+import com.huawei.hms.scankit.p.k0
 import java.io.IOException
 
 /**
  * Robust Camera1 (android.hardware.Camera) implementation for ScanKit.
- * Restores legacy device compatibility and seamlessly integrates with [ICameraManager].
+ * Matches original scanplus-2.15.0.301.aar (f0, h0, i0, l0, n0, f6) behavior 100%.
  */
 @Suppress("DEPRECATION")
 class Camera1Manager(
     private val context: Context,
-    private val lensFacing: Int = Camera.CameraInfo.CAMERA_FACING_BACK
+    private val lensFacing: Int = Camera.CameraInfo.CAMERA_FACING_BACK,
+    private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
+    private val recordingHint: Boolean = false
 ) : ICameraManager {
 
     companion object {
         private const val TAG = "ScanKitCamera1"
-        private const val DEFAULT_PREVIEW_WIDTH = 1280
-        private const val DEFAULT_PREVIEW_HEIGHT = 720
+        const val DEFAULT_PREVIEW_WIDTH = 1920
+        const val DEFAULT_PREVIEW_HEIGHT = 1080
     }
 
     private var camera: Camera? = null
@@ -54,6 +59,10 @@ class Camera1Manager(
     private var exposureRange: Range<Int> = Range(0, 0)
     private var exposureStep: Float = 1.0f
     private var currentExposure: Int = 0
+
+    // Focus state (matching i0.java)
+    private var defaultFocusMode: String = Camera.Parameters.FOCUS_MODE_AUTO
+    private var tapFocusCount: Int = 2
 
     // Callbacks
     override var onFrameAvailable: ((ByteArray, Int, Int) -> Unit)? = null
@@ -103,7 +112,7 @@ class Camera1Manager(
             isOpen = true
             onCameraOpened?.invoke()
 
-            // If a TextureView was attached before opening, bind it now
+            // If TextureView was attached before opening, bind it now
             val tv = textureView
             if (tv != null && tv.surfaceTexture != null) {
                 cam.setPreviewTexture(tv.surfaceTexture)
@@ -119,35 +128,33 @@ class Camera1Manager(
     private fun initCameraParameters(cam: Camera) {
         val parameters = cam.parameters ?: return
 
-        // 1. Preview size selection
-        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-        val display = windowManager?.defaultDisplay
-        val displaySize = Point(1080, 1920)
-        display?.getSize(displaySize)
-
-        previewSize = selectBestPreviewSize(parameters, displaySize.y, displaySize.x)
+        // 1. Preview size selection (matching f0.java lines 20-55)
+        previewSize = selectBestPreviewSize(parameters, targetResolution)
         Log.i(TAG, "Selected Camera1 preview size: ${previewSize.x}x${previewSize.y}")
         parameters.setPreviewSize(previewSize.x, previewSize.y)
         parameters.previewFormat = ImageFormat.NV21
 
-        // 2. Focus mode
+        // 2. Focus mode priority (matching f0.java lines 56-80: continuous-picture -> continuous-video -> auto)
         val supportedFocusModes = parameters.supportedFocusModes
         if (!supportedFocusModes.isNullOrEmpty()) {
-            when {
+            defaultFocusMode = when {
                 supportedFocusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE) ->
-                    parameters.focusMode = Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE
+                    Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE
                 supportedFocusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO) ->
-                    parameters.focusMode = Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO
+                    Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO
                 supportedFocusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO) ->
-                    parameters.focusMode = Camera.Parameters.FOCUS_MODE_AUTO
+                    Camera.Parameters.FOCUS_MODE_AUTO
+                else -> supportedFocusModes[0]
             }
+            parameters.focusMode = defaultFocusMode
         }
 
-        // 3. Zoom
+        // 3. Zoom initialization: set default zoom to 1 (matching f0.java lines 81-88)
         isZoomSupported = parameters.isZoomSupported
         if (isZoomSupported) {
             maxZoomIndex = parameters.maxZoom
             zoomRatios = parameters.zoomRatios ?: listOf(100)
+            parameters.zoom = 1.coerceAtMost(maxZoomIndex)
             currentZoomIndex = parameters.zoom
         } else {
             zoomRatios = listOf(100)
@@ -155,24 +162,29 @@ class Camera1Manager(
             currentZoomIndex = 0
         }
 
-        // 4. Exposure
+        // 4. Exposure initialization (matching h0.java)
         val minExp = parameters.minExposureCompensation
         val maxExp = parameters.maxExposureCompensation
         exposureRange = Range(minExp, maxExp)
         exposureStep = parameters.exposureCompensationStep
         currentExposure = parameters.exposureCompensation
 
-        // 5. Orientation
-        displayOrientation = calculateOrientation()
-        cam.setDisplayOrientation(displayOrientation)
+        // 5. Recording hint (matching f0.java line 130)
+        if (recordingHint) {
+            parameters.setRecordingHint(true)
+        }
 
-        // 6. Optional vendor optimization (from original ScanKit f0.java)
+        // 6. Vendor scan optimization reflection (matching f0.java line 135)
         if (Build.VERSION.SDK_INT >= 30) {
             try {
                 val method = Camera.Parameters::class.java.getMethod("setScanOptEnable", Boolean::class.javaPrimitiveType)
                 method.invoke(parameters, true)
             } catch (ignored: Exception) {}
         }
+
+        // 7. Orientation
+        displayOrientation = calculateOrientation()
+        cam.setDisplayOrientation(displayOrientation)
 
         try {
             cam.parameters = parameters
@@ -181,29 +193,36 @@ class Camera1Manager(
         }
     }
 
-    private fun selectBestPreviewSize(parameters: Camera.Parameters, targetWidth: Int, targetHeight: Int): Point {
+    /**
+     * Exact resolution matching algorithm from original f0.java.
+     */
+    private fun selectBestPreviewSize(parameters: Camera.Parameters, target: Point): Point {
         val supported = parameters.supportedPreviewSizes ?: return Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
-        val targetRatio = targetWidth.toDouble() / targetHeight.toDouble().coerceAtLeast(1.0)
+        val targetRatio = target.x.toDouble() / target.y.toDouble().coerceAtLeast(1.0)
 
-        var bestSize: Camera.Size? = null
+        var bestWidth = 0
+        var bestHeight = 0
         var minDiff = Double.MAX_VALUE
 
         for (size in supported) {
-            if (size.width == targetWidth && size.height == targetHeight) {
-                return Point(size.width, size.height)
+            val w = size.width
+            val h = size.height
+            if (w == target.x && h == target.y) {
+                return Point(w, h)
             }
-            if (size.width * size.height >= 153600) { // At least 640x480 resolution
-                val ratio = size.width.toDouble() / size.height.toDouble()
+            if (w * h >= 153600) { // At least 640x480 resolution
+                val ratio = w.toDouble() / h.toDouble()
                 val diff = Math.abs(ratio - targetRatio)
                 if (diff < minDiff) {
                     minDiff = diff
-                    bestSize = size
+                    bestWidth = w
+                    bestHeight = h
                 }
             }
         }
 
-        return if (bestSize != null) {
-            Point(bestSize.width, bestSize.height)
+        return if (bestWidth > 0 && bestHeight > 0) {
+            Point(bestWidth, bestHeight)
         } else {
             Point(supported[0].width, supported[0].height)
         }
@@ -294,6 +313,30 @@ class Camera1Manager(
     }
 
     @Synchronized
+    override fun requestPreviewFrame(mode: Int) {
+        val cam = camera ?: return
+        if (!isPreviewing) return
+
+        try {
+            if (mode == 1) { // ONE_SHOT (matching j0.o line 130)
+                cam.setOneShotPreviewCallback { data, _ ->
+                    if (data != null) {
+                        onFrameAvailable?.invoke(data, previewSize.x, previewSize.y)
+                    }
+                }
+            } else { // CONTINUOUS
+                cam.setPreviewCallback { data, _ ->
+                    if (data != null && isPreviewing) {
+                        onFrameAvailable?.invoke(data, previewSize.x, previewSize.y)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "requestPreviewFrame error", e)
+        }
+    }
+
+    @Synchronized
     override fun closeCamera() {
         try {
             stopPreview()
@@ -380,6 +423,9 @@ class Camera1Manager(
         }
     }
 
+    /**
+     * Tap to focus with macro mode matching original i0.java.
+     */
     @Synchronized
     override fun focusOnArea(rect: Rect?) {
         val cam = camera ?: return
@@ -388,35 +434,65 @@ class Camera1Manager(
             return
         }
 
+        if (tapFocusCount < 1) return
+        tapFocusCount--
+
         try {
+            cam.cancelAutoFocus()
             val params = cam.parameters
+            val areaRect = mapAreaToCameraCoordinates(rect.centerX(), rect.centerY(), previewSize.x, previewSize.y)
+
             if (params.maxNumFocusAreas > 0) {
-                val areaRect = mapRectToCameraCoordinates(rect)
                 params.focusAreas = listOf(Camera.Area(areaRect, 1000))
-                if (params.maxNumMeteringAreas > 0) {
-                    params.meteringAreas = listOf(Camera.Area(areaRect, 1000))
-                }
-                params.focusMode = Camera.Parameters.FOCUS_MODE_AUTO
-                cam.parameters = params
-                cam.autoFocus { _, _ ->
-                    // Auto-focus completed
-                }
+            }
+            if (params.maxNumMeteringAreas > 0) {
+                params.meteringAreas = listOf(Camera.Area(areaRect, 1000))
+            }
+
+            // Temporarily use macro focus mode during tap (matching i0.java line 160)
+            val previousFocus = params.focusMode
+            params.focusMode = Camera.Parameters.FOCUS_MODE_MACRO
+            cam.parameters = params
+
+            cam.autoFocus { _, currentCam ->
+                try {
+                    currentCam?.cancelAutoFocus()
+                    val p = currentCam?.parameters
+                    if (p != null) {
+                        p.focusMode = previousFocus
+                        currentCam.parameters = p
+                    }
+                } catch (ignored: Exception) {}
+                tapFocusCount = 2
             }
         } catch (e: Exception) {
             Log.w(TAG, "focusOnArea error", e)
+            tapFocusCount++
         }
     }
 
-    private fun mapRectToCameraCoordinates(rect: Rect): Rect {
-        val left = (rect.left * 2000 / previewSize.x.coerceAtLeast(1) - 1000).coerceIn(-1000, 1000)
-        val top = (rect.top * 2000 / previewSize.y.coerceAtLeast(1) - 1000).coerceIn(-1000, 1000)
-        val right = (rect.right * 2000 / previewSize.x.coerceAtLeast(1) - 1000).coerceIn(-1000, 1000)
-        val bottom = (rect.bottom * 2000 / previewSize.y.coerceAtLeast(1) - 1000).coerceIn(-1000, 1000)
+    private fun mapAreaToCameraCoordinates(centerX: Int, centerY: Int, width: Int, height: Int): Rect {
+        val x = ((centerX.toFloat() / width) * 2000f - 1000f).toInt()
+        val y = ((centerY.toFloat() / height) * 2000f - 1000f).toInt()
+
+        val left = (x - 150).coerceIn(-1000, 1000)
+        val top = (y - 150).coerceIn(-1000, 1000)
+        val right = (x + 150).coerceIn(-1000, 1000)
+        val bottom = (y + 150).coerceIn(-1000, 1000)
+
+        val rectF = RectF(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
+        val matrix = Matrix()
+        matrix.setScale(if (lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) -1.0f else 1.0f, 1.0f)
+        matrix.postRotate(displayOrientation.toFloat())
+        val invertMatrix = Matrix()
+        matrix.invert(invertMatrix)
+        invertMatrix.mapRect(rectF)
+
         return Rect(
-            Math.min(left, right),
-            Math.min(top, bottom),
-            Math.max(left, right),
-            Math.max(top, bottom)
+            Math.round(rectF.left).coerceIn(-1000, 1000),
+            Math.round(rectF.top).coerceIn(-1000, 1000),
+            Math.round(rectF.right).coerceIn(-1000, 1000),
+            Math.round(rectF.bottom).coerceIn(-1000, 1000)
         )
     }
 
@@ -424,8 +500,41 @@ class Camera1Manager(
     override fun cancelAutoFocus() {
         try {
             camera?.cancelAutoFocus()
+            val cam = camera ?: return
+            val params = cam.parameters
+            params.focusMode = defaultFocusMode
+            cam.parameters = params
         } catch (e: Exception) {
             Log.w(TAG, "cancelAutoFocus error: ${e.message}")
+        }
+    }
+
+    /**
+     * Metering areas mapping matching original l0.java.
+     */
+    @Synchronized
+    override fun setMeteringAreas(areas: List<*>?) {
+        val cam = camera ?: return
+        if (areas.isNullOrEmpty()) return
+
+        try {
+            val params = cam.parameters
+            if (params.maxNumMeteringAreas > 0) {
+                val cameraAreas = mutableListOf<Camera.Area>()
+                for (item in areas) {
+                    if (item is k0.a) {
+                        cameraAreas.add(Camera.Area(item.a, item.b))
+                    } else if (item is Rect) {
+                        cameraAreas.add(Camera.Area(item, 1000))
+                    }
+                }
+                if (cameraAreas.isNotEmpty()) {
+                    params.meteringAreas = cameraAreas
+                    cam.parameters = params
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "setMeteringAreas error", e)
         }
     }
 

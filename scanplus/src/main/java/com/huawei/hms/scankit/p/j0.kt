@@ -89,7 +89,7 @@ class j0(
     private var statusListener: c? = null
     private var frameCallback: d? = null
     private var currentState: b = b.CAMERA_CLOSED
-    private var torchStatus: String = "off"
+    private var torchStatus: String = e0Var.f() ?: "off"
     private var textureView: TextureView? = null
 
     private var activeManager: ICameraManager? = null
@@ -100,7 +100,12 @@ class j0(
         } else {
             Camera.CameraInfo.CAMERA_FACING_BACK
         }
-        Camera1Manager(context, facing)
+        Camera1Manager(
+            context = context,
+            lensFacing = facing,
+            targetResolution = e0Var.a() ?: Point(Camera1Manager.DEFAULT_PREVIEW_WIDTH, Camera1Manager.DEFAULT_PREVIEW_HEIGHT),
+            recordingHint = e0Var.e()
+        )
     }
 
     private val camera2Manager: Camera2Manager by lazy {
@@ -296,7 +301,7 @@ class j0(
 
     @Synchronized
     fun o() {
-        // Frame request trigger - streaming is continuous in both Camera1 and Camera2 backends
+        activeManager?.requestPreviewFrame(e0Var.c())
     }
 
     @Synchronized
@@ -305,7 +310,7 @@ class j0(
     }
 
     @Synchronized
-    fun e(): Point = activeManager?.getPreviewSize() ?: Point(1280, 720)
+    fun e(): Point = activeManager?.getPreviewSize() ?: Point(Camera1Manager.DEFAULT_PREVIEW_WIDTH, Camera1Manager.DEFAULT_PREVIEW_HEIGHT)
 
     @Synchronized
     fun n() {
@@ -313,31 +318,36 @@ class j0(
     }
 
     @Synchronized
-    fun j(): Boolean = true
+    fun j(): Boolean = (activeManager?.getZoomRatios()?.size ?: 0) > 1
 
     @Synchronized
     fun f(): b = currentState
 
     @Synchronized
-    fun b(): g0 {
-        val range = activeManager?.getExposureRange() ?: Range(0, 0)
+    fun b(): g0? {
+        val mgr = activeManager ?: return null
+        if (currentState == b.CAMERA_CLOSED) return null
+        val range = mgr.getExposureRange()
         return g0(
             range.upper,
             range.lower,
-            activeManager?.getExposureCompensation() ?: 0,
-            activeManager?.getExposureStep() ?: 1.0f
+            mgr.getExposureCompensation(),
+            mgr.getExposureStep()
         )
     }
 
     @Synchronized
-    fun g(): m0 {
-        val ratios = activeManager?.getZoomRatios() ?: listOf(100)
-        val currentIndex = activeManager?.getZoomIndex() ?: 0
+    fun g(): m0? {
+        val mgr = activeManager ?: return null
+        if (currentState == b.CAMERA_CLOSED) return null
+        val ratios = mgr.getZoomRatios()
+        val currentIndex = mgr.getZoomIndex()
         return m0(ratios.size - 1, currentIndex, ratios)
     }
 
     @Synchronized
-    fun c(): k0 {
+    fun c(): k0? {
+        if (activeManager == null || currentState == b.CAMERA_CLOSED) return null
         return k0(1, Rect(-100, -100, 100, 100))
     }
 
@@ -391,10 +401,7 @@ class j0(
     @Synchronized
     fun a(list: List<*>?) {
         if (list.isNullOrEmpty()) return
-        val first = list[0]
-        if (first is k0.a) {
-            activeManager?.focusOnArea(first.a)
-        }
+        activeManager?.setMeteringAreas(list)
     }
 
     @Synchronized

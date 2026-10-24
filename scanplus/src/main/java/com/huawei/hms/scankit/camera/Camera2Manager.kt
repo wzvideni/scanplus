@@ -21,6 +21,7 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
+import com.huawei.hms.scankit.p.k0
 import com.huawei.hms.scankit.util.ImageConversionUtils
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -39,8 +40,8 @@ class Camera2Manager(
 ) : ICameraManager {
     companion object {
         private const val TAG = "ScanKitCamera2"
-        private const val DEFAULT_PREVIEW_WIDTH = 1280
-        private const val DEFAULT_PREVIEW_HEIGHT = 720
+        private const val DEFAULT_PREVIEW_WIDTH = 1920
+        private const val DEFAULT_PREVIEW_HEIGHT = 1080
     }
 
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -260,17 +261,11 @@ class Camera2Manager(
 
         if (choices.isEmpty()) return
 
-        val size720p = choices.firstOrNull { it.width == 1280 && it.height == 720 }
         val size1080p = choices.firstOrNull { it.width == 1920 && it.height == 1080 }
+        val size720p = choices.firstOrNull { it.width == 1280 && it.height == 720 }
 
-        val hwLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
-            ?: CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY
-        val isFullOrHigher = hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL ||
-            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && hwLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3)
-
-        // 720p is guaranteed to run without ISP bandwidth overload on all devices;
-        // 1080p used if FULL/LEVEL_3 hardware level and available.
-        if (isFullOrHigher && size1080p != null) {
+        // Match original ScanKit AAR preference: 1080p for highest recognition accuracy
+        if (size1080p != null) {
             previewSize = Point(1920, 1080)
             Log.i(TAG, "Selected preferred 1080p preview size: 1920 x 1080")
             return
@@ -278,13 +273,7 @@ class Camera2Manager(
 
         if (size720p != null) {
             previewSize = Point(1280, 720)
-            Log.i(TAG, "Selected preferred 720p preview size: 1280 x 720")
-            return
-        }
-
-        if (size1080p != null) {
-            previewSize = Point(1920, 1080)
-            Log.i(TAG, "Selected 1080p preview size: 1920 x 1080")
+            Log.i(TAG, "Selected fallback 720p preview size: 1280 x 720")
             return
         }
 
@@ -579,6 +568,10 @@ class Camera2Manager(
         }
     }
 
+    override fun requestPreviewFrame(mode: Int) {
+        // In Camera2, frames stream continuously via ImageReader; no-op needed
+    }
+
     /**
      * Closes camera, capture session, and image reader synchronously.
      */
@@ -759,6 +752,16 @@ class Camera2Manager(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error cancelling autofocus", e)
+        }
+    }
+
+    override fun setMeteringAreas(areas: List<*>?) {
+        if (areas.isNullOrEmpty()) return
+        val first = areas[0]
+        if (first is Rect) {
+            focusOnArea(first)
+        } else if (first is k0.a) {
+            focusOnArea(first.a)
         }
     }
 

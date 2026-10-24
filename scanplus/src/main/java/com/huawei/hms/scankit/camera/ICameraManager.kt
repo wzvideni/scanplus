@@ -19,6 +19,7 @@ interface ICameraManager {
     fun startPreview()
     fun stopPreview()
     fun closeCamera()
+    fun requestPreviewFrame(mode: Int = 0)
     fun setTorch(enable: Boolean)
     fun getTorch(): Boolean
     fun setZoomIndex(index: Int)
@@ -29,6 +30,7 @@ interface ICameraManager {
     fun getCurrentZoomRatio(): Float
     fun focusOnArea(rect: Rect?)
     fun cancelAutoFocus()
+    fun setMeteringAreas(areas: List<*>?)
     fun setExposureCompensation(value: Int)
     fun getExposureCompensation(): Int
     fun getExposureRange(): Range<Int>
