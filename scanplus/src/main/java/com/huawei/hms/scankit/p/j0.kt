@@ -22,10 +22,11 @@ class j0(
 
     /**
      * Camera state enum matching ScanKit contract.
-     * Enum constant names b, c, d, e, f match original obfuscated bytecode fields in ScanKit.
+     * Entry b is renamed to CLOSED_STATE to avoid colliding with enum type name 'b' on K1 Kotlin compilers (< 2.0).
+     * @JvmField val b in companion object guarantees Java bytecode exposes static field 'b' for backward compatibility.
      */
     enum class b(private val a: Int) {
-        b(1),
+        CLOSED_STATE(1),
         c(2),
         d(3),
         e(4),
@@ -34,11 +35,13 @@ class j0(
         fun b(): Int = a
 
         companion object {
-            @JvmField val CAMERA_CLOSED = b
+            @JvmField val CAMERA_CLOSED = CLOSED_STATE
             @JvmField val CAMERA_OPENED = c
             @JvmField val CAMERA_INITIALED = d
             @JvmField val PREVIEW_STARTED = e
             @JvmField val PREVIEW_STOPPED = f
+
+            @JvmField val b = CLOSED_STATE
         }
     }
 
