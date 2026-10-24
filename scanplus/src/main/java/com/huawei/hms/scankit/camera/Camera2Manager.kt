@@ -16,7 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.util.Log
+import com.huawei.hms.scankit.util.ScanLog
 import android.util.Range
 import android.util.Size
 import android.view.Surface
@@ -117,7 +117,7 @@ class Camera2Manager(
         try {
             backgroundThread?.join(300)
         } catch (e: InterruptedException) {
-            Log.e(TAG, "Error stopping background thread", e)
+            ScanLog.e(TAG, "Error stopping background thread", e)
         }
         backgroundThread = null
         backgroundHandler = null
@@ -143,7 +143,7 @@ class Camera2Manager(
                 initCharacteristics(characteristics)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to inspect camera characteristics", e)
+            ScanLog.e(TAG, "Failed to inspect camera characteristics", e)
         }
     }
 
@@ -267,13 +267,13 @@ class Camera2Manager(
         // Match original ScanKit AAR preference: 1080p for highest recognition accuracy
         if (size1080p != null) {
             previewSize = Point(1920, 1080)
-            Log.i(TAG, "Selected preferred 1080p preview size: 1920 x 1080")
+            ScanLog.i(TAG, "Selected preferred 1080p preview size: 1920 x 1080")
             return
         }
 
         if (size720p != null) {
             previewSize = Point(1280, 720)
-            Log.i(TAG, "Selected fallback 720p preview size: 1280 x 720")
+            ScanLog.i(TAG, "Selected fallback 720p preview size: 1280 x 720")
             return
         }
 
@@ -292,7 +292,7 @@ class Camera2Manager(
         }
 
         previewSize = Point(bestSize.width, bestSize.height)
-        Log.i(TAG, "Selected optimal Camera2 preview size: ${previewSize.x} x ${previewSize.y}")
+        ScanLog.i(TAG, "Selected optimal Camera2 preview size: ${previewSize.x} x ${previewSize.y}")
     }
 
     /**
@@ -302,16 +302,16 @@ class Camera2Manager(
     override fun openCamera() {
         startBackgroundThread()
         if (cameraDevice != null) {
-            Log.d(TAG, "openCamera: cameraDevice already open")
+            ScanLog.d(TAG, "openCamera: cameraDevice already open")
             checkAndCreateSession()
             return
         }
         if (isCameraOpening) {
-            Log.d(TAG, "openCamera: camera opening already in progress")
+            ScanLog.d(TAG, "openCamera: camera opening already in progress")
             return
         }
         val id = cameraId ?: run {
-            Log.e(TAG, "No suitable camera ID found")
+            ScanLog.e(TAG, "No suitable camera ID found")
             onCameraError?.invoke(IllegalStateException("No camera ID found"))
             return
         }
@@ -328,7 +328,7 @@ class Camera2Manager(
                     cameraDevice = camera
                     isCameraOpening = false
                     openRetryCount = 0
-                    Log.i(TAG, "CameraDevice opened successfully: id=$id")
+                    ScanLog.i(TAG, "CameraDevice opened successfully: id=$id")
                     onCameraOpened?.invoke()
                     checkAndCreateSession()
                 }
@@ -338,7 +338,7 @@ class Camera2Manager(
                     camera.close()
                     cameraDevice = null
                     isCameraOpening = false
-                    Log.w(TAG, "CameraDevice disconnected")
+                    ScanLog.w(TAG, "CameraDevice disconnected")
                     onCameraClosed?.invoke()
                 }
 
@@ -347,7 +347,7 @@ class Camera2Manager(
                     camera.close()
                     cameraDevice = null
                     isCameraOpening = false
-                    Log.e(TAG, "Camera open error: $error (retry=$openRetryCount)")
+                    ScanLog.e(TAG, "Camera open error: $error (retry=$openRetryCount)")
 
                     if ((error == CameraDevice.StateCallback.ERROR_CAMERA_IN_USE ||
                          error == CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE ||
@@ -355,7 +355,7 @@ class Camera2Manager(
                         openRetryCount < 3
                     ) {
                         openRetryCount++
-                        Log.w(TAG, "Camera busy or device error, retrying open in 250ms (attempt $openRetryCount/3)...")
+                        ScanLog.w(TAG, "Camera busy or device error, retrying open in 250ms (attempt $openRetryCount/3)...")
                         backgroundHandler?.postDelayed({
                             openCamera()
                         }, 250)
@@ -369,7 +369,7 @@ class Camera2Manager(
         } catch (e: Exception) {
             isCameraOpening = false
             cameraOpenCloseLock.release()
-            Log.e(TAG, "Failed to open camera: ${e.message}", e)
+            ScanLog.e(TAG, "Failed to open camera: ${e.message}", e)
             onCameraError?.invoke(e)
         }
     }
@@ -379,7 +379,7 @@ class Camera2Manager(
      */
     fun checkAndCreateSession() {
         if (cameraDevice == null || textureView?.surfaceTexture == null) {
-            Log.d(TAG, "checkAndCreateSession: Waiting for both cameraDevice (${cameraDevice != null}) and surfaceTexture (${textureView?.surfaceTexture != null})")
+            ScanLog.d(TAG, "checkAndCreateSession: Waiting for both cameraDevice (${cameraDevice != null}) and surfaceTexture (${textureView?.surfaceTexture != null})")
             return
         }
         val handler = backgroundHandler
@@ -416,7 +416,7 @@ class Camera2Manager(
         val texture = view.surfaceTexture ?: return
 
         if (captureSession != null) {
-            Log.d(TAG, "createCaptureSession: session already exists, starting repeating if requested")
+            ScanLog.d(TAG, "createCaptureSession: session already exists, starting repeating if requested")
             if (shouldStartPreview) {
                 startRepeatingRequest()
             }
@@ -424,7 +424,7 @@ class Camera2Manager(
         }
 
         if (isSessionCreating) {
-            Log.d(TAG, "createCaptureSession: already creating session, skipping duplicate call")
+            ScanLog.d(TAG, "createCaptureSession: already creating session, skipping duplicate call")
             return
         }
         isSessionCreating = true
@@ -453,7 +453,7 @@ class Camera2Manager(
                     val nv21 = ImageConversionUtils.yuv420888ToNv21(image, frameBuffer)
                     onFrameAvailable?.invoke(nv21, image.width, image.height)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error converting image frame", e)
+                    ScanLog.e(TAG, "Error converting image frame", e)
                 } finally {
                     image.close()
                 }
@@ -497,7 +497,7 @@ class Camera2Manager(
                         applyZoom()
                         applyTorch()
                         applyExposure()
-                        Log.i(TAG, "CameraCaptureSession configured successfully, shouldStartPreview=$shouldStartPreview")
+                        ScanLog.i(TAG, "CameraCaptureSession configured successfully, shouldStartPreview=$shouldStartPreview")
                         if (shouldStartPreview) {
                             startRepeatingRequest()
                         }
@@ -505,11 +505,11 @@ class Camera2Manager(
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
                         isSessionCreating = false
-                        Log.e(TAG, "Capture session configuration failed with size ${previewSize.x}x${previewSize.y}")
+                        ScanLog.e(TAG, "Capture session configuration failed with size ${previewSize.x}x${previewSize.y}")
 
                         // If 1080p failed, automatically fallback to 720p
                         if (previewSize.x == 1920 && previewSize.y == 1080) {
-                            Log.w(TAG, "Retrying capture session with 720p fallback...")
+                            ScanLog.w(TAG, "Retrying capture session with 720p fallback...")
                             previewSize = Point(1280, 720)
                             backgroundHandler?.post {
                                 createCaptureSession()
@@ -523,7 +523,7 @@ class Camera2Manager(
             )
         } catch (e: Exception) {
             isSessionCreating = false
-            Log.e(TAG, "Failed to create capture session", e)
+            ScanLog.e(TAG, "Failed to create capture session", e)
             onCameraError?.invoke(e)
         }
     }
@@ -532,20 +532,20 @@ class Camera2Manager(
         val session = captureSession
         val builder = previewRequestBuilder
         if (session == null || builder == null) {
-            Log.d(TAG, "startRepeatingRequest: session or builder not ready yet (session=${session != null}, builder=${builder != null})")
+            ScanLog.d(TAG, "startRepeatingRequest: session or builder not ready yet (session=${session != null}, builder=${builder != null})")
             return
         }
         try {
             session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             isPreviewStarted = true
-            Log.i(TAG, "Camera2 preview repeating request started successfully")
+            ScanLog.i(TAG, "Camera2 preview repeating request started successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start repeating request", e)
+            ScanLog.e(TAG, "Failed to start repeating request", e)
         }
     }
 
     override fun startPreview() {
-        Log.i(TAG, "startPreview called, captureSession=${captureSession != null}")
+        ScanLog.i(TAG, "startPreview called, captureSession=${captureSession != null}")
         shouldStartPreview = true
         backgroundHandler?.post {
             if (captureSession != null && !isPreviewStarted) {
@@ -563,7 +563,7 @@ class Camera2Manager(
                 captureSession?.stopRepeating()
                 isPreviewStarted = false
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to stop preview", e)
+                ScanLog.e(TAG, "Failed to stop preview", e)
             }
         }
     }
@@ -620,7 +620,7 @@ class Camera2Manager(
             currentSurfaceTexture = null
             previewRequestBuilder = null
         } catch (e: Exception) {
-            Log.e(TAG, "Error closing camera", e)
+            ScanLog.e(TAG, "Error closing camera", e)
         } finally {
             cameraOpenCloseLock.release()
             stopBackgroundThread()
@@ -644,7 +644,7 @@ class Camera2Manager(
         try {
             val hasFlash = cameraCharacteristics?.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             if (!hasFlash) {
-                Log.w(TAG, "Flash not available on current camera")
+                ScanLog.w(TAG, "Flash not available on current camera")
                 return
             }
             if (isTorchOn) {
@@ -657,7 +657,7 @@ class Camera2Manager(
                 session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to update torch", e)
+            ScanLog.e(TAG, "Failed to update torch", e)
         }
     }
 
@@ -705,7 +705,7 @@ class Camera2Manager(
                 session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to apply zoom", e)
+            ScanLog.e(TAG, "Failed to apply zoom", e)
         }
     }
 
@@ -737,7 +737,7 @@ class Camera2Manager(
             builder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
             session.capture(builder.build(), null, backgroundHandler)
         } catch (e: Exception) {
-            Log.e(TAG, "Error executing focus on area", e)
+            ScanLog.e(TAG, "Error executing focus on area", e)
         }
     }
 
@@ -751,7 +751,7 @@ class Camera2Manager(
                 session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error cancelling autofocus", e)
+            ScanLog.e(TAG, "Error cancelling autofocus", e)
         }
     }
 
@@ -787,7 +787,7 @@ class Camera2Manager(
                 session.setRepeatingRequest(builder.build(), null, backgroundHandler)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to apply exposure compensation", e)
+            ScanLog.e(TAG, "Failed to apply exposure compensation", e)
         }
     }
 

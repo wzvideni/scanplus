@@ -5,7 +5,7 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.hardware.Camera
 import android.hardware.camera2.CameraCharacteristics
-import android.util.Log
+import com.huawei.hms.scankit.util.ScanLog
 import android.util.Range
 import android.view.TextureView
 import com.huawei.hms.scankit.ScanPlusConfig
@@ -133,7 +133,7 @@ class j0(
             }
         }
         manager.onCameraError = { error ->
-            Log.e(TAG, "$backendName error: ${error.message}", error)
+            ScanLog.e(TAG, "$backendName error: ${error.message}", error)
             synchronized(this@j0) {
                 statusListener?.b()
             }
@@ -149,7 +149,7 @@ class j0(
 
     @Synchronized
     fun m() {
-        Log.i(TAG, "Camera onResume, mode=$cameraMode")
+        ScanLog.i(TAG, "Camera onResume, mode=$cameraMode")
         if (currentState == b.CAMERA_CLOSED || currentState == b.PREVIEW_STOPPED) {
             when (cameraMode) {
                 CameraMode.CAMERA1 -> {
@@ -161,7 +161,7 @@ class j0(
                             currentState = b.CAMERA_OPENED
                         }
                     } catch (e: Throwable) {
-                        Log.e(TAG, "Camera1 open failed: ${e.message}", e)
+                        ScanLog.e(TAG, "Camera1 open failed: ${e.message}", e)
                         statusListener?.b()
                     }
                 }
@@ -174,14 +174,14 @@ class j0(
                             currentState = b.CAMERA_OPENED
                         }
                     } catch (e: Throwable) {
-                        Log.e(TAG, "Camera2 open failed: ${e.message}", e)
+                        ScanLog.e(TAG, "Camera2 open failed: ${e.message}", e)
                         statusListener?.b()
                     }
                 }
                 CameraMode.AUTO -> {
                     var c1Success = false
                     try {
-                        Log.i(TAG, "AUTO mode: Trying Camera1 first...")
+                        ScanLog.i(TAG, "AUTO mode: Trying Camera1 first...")
                         bindCallbacks(camera1Manager, "Camera1")
                         camera1Manager.openCamera()
                         activeManager = camera1Manager
@@ -189,9 +189,9 @@ class j0(
                             currentState = b.CAMERA_OPENED
                         }
                         c1Success = true
-                        Log.i(TAG, "AUTO mode: Camera1 opened successfully")
+                        ScanLog.i(TAG, "AUTO mode: Camera1 opened successfully")
                     } catch (e: Throwable) {
-                        Log.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}. Falling back to Camera2...")
+                        ScanLog.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}. Falling back to Camera2...")
                     }
 
                     if (!c1Success) {
@@ -202,9 +202,9 @@ class j0(
                             if (currentState.b() < b.CAMERA_OPENED.b()) {
                                 currentState = b.CAMERA_OPENED
                             }
-                            Log.i(TAG, "AUTO mode: Camera2 fallback opened successfully")
+                            ScanLog.i(TAG, "AUTO mode: Camera2 fallback opened successfully")
                         } catch (e: Throwable) {
-                            Log.e(TAG, "Camera2 fallback also failed: ${e.message}", e)
+                            ScanLog.e(TAG, "Camera2 fallback also failed: ${e.message}", e)
                             statusListener?.b()
                         }
                     }
@@ -215,7 +215,7 @@ class j0(
 
     @Synchronized
     fun l() {
-        Log.i(TAG, "Camera onPause")
+        ScanLog.i(TAG, "Camera onPause")
         try {
             if (currentState.b() == b.PREVIEW_STARTED.b()) {
                 a()
@@ -231,7 +231,7 @@ class j0(
                 statusListener?.c()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Camera onPause error", e)
+            ScanLog.e(TAG, "Camera onPause error", e)
         }
     }
 
@@ -256,14 +256,14 @@ class j0(
                 torchStatus = "off"
             }
         } catch (e: Exception) {
-            Log.w(TAG, "setTorchStatus error", e)
+            ScanLog.w(TAG, "setTorchStatus error", e)
         }
     }
 
     @Synchronized
     fun p() {
         try {
-            Log.i(TAG, "startPreview invoked, currentState=$currentState")
+            ScanLog.i(TAG, "startPreview invoked, currentState=$currentState")
             if (currentState == b.CAMERA_CLOSED) {
                 m()
             }
@@ -272,7 +272,7 @@ class j0(
                 mgr.startPreview()
             } catch (e: Exception) {
                 if (cameraMode == CameraMode.AUTO && mgr === camera1Manager) {
-                    Log.w(TAG, "Camera1 startPreview failed in AUTO mode, falling back to Camera2: ${e.message}")
+                    ScanLog.w(TAG, "Camera1 startPreview failed in AUTO mode, falling back to Camera2: ${e.message}")
                     mgr.closeCamera()
                     bindCallbacks(camera2Manager, "Camera2")
                     camera2Manager.openCamera()
@@ -285,7 +285,7 @@ class j0(
             }
             currentState = b.PREVIEW_STARTED
         } catch (e: Exception) {
-            Log.w(TAG, "startPreview error", e)
+            ScanLog.w(TAG, "startPreview error", e)
         }
     }
 
@@ -295,7 +295,7 @@ class j0(
             activeManager?.stopPreview()
             currentState = b.PREVIEW_STOPPED
         } catch (e: Exception) {
-            Log.w(TAG, "stopPreview error", e)
+            ScanLog.w(TAG, "stopPreview error", e)
         }
     }
 
@@ -382,7 +382,7 @@ class j0(
     @Synchronized
     fun a(textureView: TextureView?) {
         requireNotNull(textureView) { "TextureView must not be null" }
-        Log.i(TAG, "attachTextureView invoked, currentState=$currentState")
+        ScanLog.i(TAG, "attachTextureView invoked, currentState=$currentState")
         this.textureView = textureView
         if (currentState == b.CAMERA_CLOSED) {
             m()

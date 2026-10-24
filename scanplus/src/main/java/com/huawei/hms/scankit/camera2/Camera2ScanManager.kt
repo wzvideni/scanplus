@@ -5,7 +5,7 @@ import android.content.Context
 import android.graphics.Point
 import android.graphics.Rect
 import android.os.Bundle
-import android.util.Log
+import com.huawei.hms.scankit.util.ScanLog
 import android.view.TextureView
 import com.huawei.hms.feature.dynamic.ObjectWrapper
 import com.huawei.hms.hmsscankit.DetailRect
@@ -88,13 +88,13 @@ class Camera2ScanManager(
                 CameraMode.AUTO -> {
                     var c1Success = false
                     try {
-                        Log.i(TAG, "AUTO mode: Starting with Camera1...")
+                        ScanLog.i(TAG, "AUTO mode: Starting with Camera1...")
                         setupCameraCallbacks(camera1Manager)
                         camera1Manager.openCamera()
                         activeCamera = camera1Manager
                         c1Success = true
                     } catch (e: Throwable) {
-                        Log.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}, falling back to Camera2...")
+                        ScanLog.w(TAG, "Camera1 open failed in AUTO mode: ${e.message}, falling back to Camera2...")
                     }
 
                     if (!c1Success) {
@@ -112,7 +112,7 @@ class Camera2ScanManager(
             activeCamera?.startPreview()
         } catch (e: Exception) {
             if (cameraMode == CameraMode.AUTO && activeCamera === camera1Manager) {
-                Log.w(TAG, "Camera1 startPreview failed in AUTO mode: ${e.message}, falling back to Camera2...")
+                ScanLog.w(TAG, "Camera1 startPreview failed in AUTO mode: ${e.message}, falling back to Camera2...")
                 camera1Manager.closeCamera()
                 setupCameraCallbacks(camera2Manager)
                 camera2Manager.openCamera()
@@ -231,7 +231,7 @@ class Camera2ScanManager(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Decode frame error", e)
+                ScanLog.e(TAG, "Decode frame error", e)
             } finally {
                 isDecoding.set(false)
             }

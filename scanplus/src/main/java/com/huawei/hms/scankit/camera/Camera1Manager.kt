@@ -9,7 +9,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.hardware.Camera
 import android.os.Build
-import android.util.Log
+import com.huawei.hms.scankit.util.ScanLog
 import android.util.Range
 import android.view.Surface
 import android.view.TextureView
@@ -91,7 +91,7 @@ class Camera1Manager(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "findCameraId error", e)
+            ScanLog.e(TAG, "findCameraId error", e)
         }
         return 0
     }
@@ -99,12 +99,12 @@ class Camera1Manager(
     @Synchronized
     override fun openCamera() {
         if (isOpen && camera != null) {
-            Log.d(TAG, "Camera1 is already open")
+            ScanLog.d(TAG, "Camera1 is already open")
             return
         }
 
         try {
-            Log.i(TAG, "Opening Camera1 with cameraId=$cameraId")
+            ScanLog.i(TAG, "Opening Camera1 with cameraId=$cameraId")
             val cam = Camera.open(cameraId) ?: throw IOException("Camera.open($cameraId) returned null")
             this.camera = cam
 
@@ -118,7 +118,7 @@ class Camera1Manager(
                 cam.setPreviewTexture(tv.surfaceTexture)
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to open Camera1: ${e.message}", e)
+            ScanLog.e(TAG, "Failed to open Camera1: ${e.message}", e)
             closeCamera()
             onCameraError?.invoke(e)
             throw e
@@ -130,7 +130,7 @@ class Camera1Manager(
 
         // 1. Preview size selection (matching f0.java lines 20-55)
         previewSize = selectBestPreviewSize(parameters, targetResolution)
-        Log.i(TAG, "Selected Camera1 preview size: ${previewSize.x}x${previewSize.y}")
+        ScanLog.i(TAG, "Selected Camera1 preview size: ${previewSize.x}x${previewSize.y}")
         parameters.setPreviewSize(previewSize.x, previewSize.y)
         parameters.previewFormat = ImageFormat.NV21
 
@@ -189,7 +189,7 @@ class Camera1Manager(
         try {
             cam.parameters = parameters
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to apply full Camera1 parameters", e)
+            ScanLog.w(TAG, "Failed to apply full Camera1 parameters", e)
         }
     }
 
@@ -259,7 +259,7 @@ class Camera1Manager(
             try {
                 cam.setPreviewTexture(surfaceTexture)
             } catch (e: Exception) {
-                Log.e(TAG, "setPreviewTexture failed", e)
+                ScanLog.e(TAG, "setPreviewTexture failed", e)
             }
         }
     }
@@ -267,12 +267,12 @@ class Camera1Manager(
     @Synchronized
     override fun startPreview() {
         val cam = camera ?: run {
-            Log.w(TAG, "Cannot startPreview: camera is null")
+            ScanLog.w(TAG, "Cannot startPreview: camera is null")
             return
         }
 
         if (isPreviewing) {
-            Log.d(TAG, "Camera1 preview is already running")
+            ScanLog.d(TAG, "Camera1 preview is already running")
             return
         }
 
@@ -291,9 +291,9 @@ class Camera1Manager(
 
             cam.startPreview()
             isPreviewing = true
-            Log.i(TAG, "Camera1 preview started successfully")
+            ScanLog.i(TAG, "Camera1 preview started successfully")
         } catch (e: Exception) {
-            Log.e(TAG, "startPreview failed", e)
+            ScanLog.e(TAG, "startPreview failed", e)
             onCameraError?.invoke(e)
             throw e
         }
@@ -306,7 +306,7 @@ class Camera1Manager(
             camera?.setPreviewCallback(null)
             camera?.stopPreview()
         } catch (e: Exception) {
-            Log.w(TAG, "stopPreview error: ${e.message}")
+            ScanLog.w(TAG, "stopPreview error: ${e.message}")
         } finally {
             isPreviewing = false
         }
@@ -332,7 +332,7 @@ class Camera1Manager(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "requestPreviewFrame error", e)
+            ScanLog.w(TAG, "requestPreviewFrame error", e)
         }
     }
 
@@ -346,7 +346,7 @@ class Camera1Manager(
             }
             camera?.release()
         } catch (e: Exception) {
-            Log.w(TAG, "closeCamera error: ${e.message}")
+            ScanLog.w(TAG, "closeCamera error: ${e.message}")
         } finally {
             camera = null
             isOpen = false
@@ -369,7 +369,7 @@ class Camera1Manager(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "setTorch error", e)
+            ScanLog.w(TAG, "setTorch error", e)
         }
     }
 
@@ -386,7 +386,7 @@ class Camera1Manager(
             cam.parameters = params
             currentZoomIndex = target
         } catch (e: Exception) {
-            Log.w(TAG, "setZoomIndex error", e)
+            ScanLog.w(TAG, "setZoomIndex error", e)
         }
     }
 
@@ -466,7 +466,7 @@ class Camera1Manager(
                 tapFocusCount = 2
             }
         } catch (e: Exception) {
-            Log.w(TAG, "focusOnArea error", e)
+            ScanLog.w(TAG, "focusOnArea error", e)
             tapFocusCount++
         }
     }
@@ -505,7 +505,7 @@ class Camera1Manager(
             params.focusMode = defaultFocusMode
             cam.parameters = params
         } catch (e: Exception) {
-            Log.w(TAG, "cancelAutoFocus error: ${e.message}")
+            ScanLog.w(TAG, "cancelAutoFocus error: ${e.message}")
         }
     }
 
@@ -534,7 +534,7 @@ class Camera1Manager(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "setMeteringAreas error", e)
+            ScanLog.w(TAG, "setMeteringAreas error", e)
         }
     }
 
@@ -548,7 +548,7 @@ class Camera1Manager(
             cam.parameters = params
             currentExposure = target
         } catch (e: Exception) {
-            Log.w(TAG, "setExposureCompensation error", e)
+            ScanLog.w(TAG, "setExposureCompensation error", e)
         }
     }
 
@@ -568,7 +568,7 @@ class Camera1Manager(
         try {
             camera?.setDisplayOrientation(degrees)
         } catch (e: Exception) {
-            Log.w(TAG, "setDisplayOrientation error", e)
+            ScanLog.w(TAG, "setDisplayOrientation error", e)
         }
     }
 }

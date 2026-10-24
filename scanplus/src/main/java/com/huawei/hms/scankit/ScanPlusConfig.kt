@@ -1,5 +1,6 @@
 package com.huawei.hms.scankit
 
+import android.util.Log
 import com.huawei.hms.scankit.camera.CameraMode
 
 /**
@@ -15,4 +16,46 @@ object ScanPlusConfig {
      */
     @JvmStatic
     var cameraMode: CameraMode = CameraMode.AUTO
+
+    /**
+     * Controls whether verbose debug and info logging is enabled.
+     * Default: false (silences high-frequency camera, preview, and decode logs).
+     * Set to true to output verbose diagnostic logs in Logcat.
+     */
+    @JvmStatic
+    var isLogEnabled: Boolean = false
+
+    /**
+     * Minimum log priority level to print when [isLogEnabled] is false.
+     * Use standard Android Log priorities: [Log.VERBOSE], [Log.DEBUG], [Log.INFO], [Log.WARN], [Log.ERROR].
+     * Defaults to [Log.WARN] (only warnings and errors are output by default).
+     * Set to [Int.MAX_VALUE] to silence ALL logs including errors.
+     */
+    @JvmStatic
+    var minLogLevel: Int = Log.WARN
+
+    /**
+     * Custom log sink callback. When set, all ScanPlus and ScanKit engine logs will be routed
+     * to this callback instead of directly calling [android.util.Log].
+     */
+    @JvmStatic
+    var logDelegate: ((priority: Int, tag: String, message: String, throwable: Throwable?) -> Unit)? = null
+
+    /**
+     * Completely disables all logs (including errors and warnings).
+     */
+    @JvmStatic
+    fun disableAllLogs() {
+        isLogEnabled = false
+        minLogLevel = Int.MAX_VALUE
+    }
+
+    /**
+     * Enables full verbose diagnostic logging (VERBOSE, DEBUG, INFO, WARN, ERROR).
+     */
+    @JvmStatic
+    fun enableAllLogs() {
+        isLogEnabled = true
+        minLogLevel = Log.VERBOSE
+    }
 }
