@@ -42,7 +42,7 @@ class Camera2ScanView @JvmOverloads constructor(
             scanManager?.onScanResult = value
         }
 
-    var cameraMode: CameraMode = ScanPlusConfig.cameraMode
+    var cameraMode: CameraMode = CameraMode.CAMERA2
         set(value) {
             field = value
             scanManager?.cameraMode = value

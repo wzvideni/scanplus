@@ -6,6 +6,7 @@ import android.graphics.Point
 import android.graphics.Rect
 import android.os.Bundle
 import android.view.TextureView
+import android.view.WindowManager
 import com.huawei.hms.feature.dynamic.ObjectWrapper
 import com.huawei.hms.hmsscankit.DetailRect
 import com.huawei.hms.ml.scan.HmsScan
@@ -16,6 +17,7 @@ import com.huawei.hms.scankit.camera.Camera2Manager
 import com.huawei.hms.scankit.camera.CameraMode
 import com.huawei.hms.scankit.camera.ICameraManager
 import com.huawei.hms.scankit.p.h4
+import com.huawei.hms.scankit.p.i8
 import com.huawei.hms.scankit.p.s6
 import com.huawei.hms.scankit.p.y6
 import com.huawei.hms.scankit.util.ScanLog
@@ -204,15 +206,19 @@ class Camera2ScanManager(
 
         coroutineScope.launch {
             try {
-                val rotation = if (context is Activity) {
-                    @Suppress("DEPRECATION")
-                    context.windowManager.defaultDisplay.rotation
-                } else {
-                    0
-                }
+                val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                val rotation = wm?.defaultDisplay?.rotation ?: 0
+
+                val screenPoint = (context as? Activity)?.let { i8.b(it) }
+                    ?: wm?.let {
+                        val pt = Point()
+                        it.defaultDisplay.getSize(pt)
+                        pt
+                    }
+                    ?: Point(1080, 1920)
 
                 val bundle = Bundle().apply {
-                    putParcelable("Screen", Point(1080, 1920))
+                    putParcelable("Screen", screenPoint)
                     putParcelable("Rect", Rect(-1, -1, -1, -1))
                     putBoolean(DetailRect.PARSE_RESULT, true)
                 }
@@ -238,10 +244,20 @@ class Camera2ScanManager(
                         cam.setZoomRatio(targetZoom)
                     }
 
-                    val hmsScans = y6.a(rawResults)
-                    if (hmsScans.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            onScanResult?.invoke(hmsScans)
+                    // Handle autofocus hint if requested by the engine
+                    val areas = first.d()
+                    if (first.o() && !areas.isNullOrEmpty() && areas[0] is Rect) {
+                        cam?.focusOnArea(areas[0] as Rect)
+                    }
+
+                    // Only emit scan results if at least one barcode was actually decoded (has non-empty value)
+                    val validResults = rawResults.filter { !it.k().isNullOrEmpty() }.toTypedArray()
+                    if (validResults.isNotEmpty()) {
+                        val hmsScans = y6.a(validResults)
+                        if (hmsScans.isNotEmpty()) {
+                            withContext(Dispatchers.Main) {
+                                onScanResult?.invoke(hmsScans)
+                            }
                         }
                     }
                 }

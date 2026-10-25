@@ -3,6 +3,7 @@ package com.example.scankitdemokotlin
 import android.app.Activity
 import android.content.Intent
 import android.graphics.*
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Message
@@ -119,6 +120,8 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
                     message.obj = it.toTypedArray()
                     sendMessage(message)
                     restart(DEFAULT_ZOOM)
+                } else if (it != null && it.size > 0 && it[0] != null && TextUtils.isEmpty(it[0]!!.getOriginalValue()) && it[0]!!.getZoomValue() != 1.0) {
+                    restart(it[0]!!.getZoomValue())
                 } else {
                     restart(DEFAULT_ZOOM)
                 }
@@ -133,6 +136,9 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
     }
 
     override fun handleMessage(message: Message) {
+        if (activity.isFinishing || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed)) {
+            return
+        }
         Log.e(TAG, message.what.toString())
         removeMessages(1)
         if (message.what == 0) {
@@ -141,10 +147,6 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
 
             val rawArray = message.obj as? Array<*>
             val arr = rawArray?.filterIsInstance<HmsScan>()?.toTypedArray() ?: emptyArray()
-
-            val intent = Intent()
-            intent.putExtra(SCAN_RESULT, arr)
-            activity.setResult(Activity.RESULT_OK, intent)
 
             // Show the scanning result on the screen.
             if (mode == MULTIPROCESSOR_ASYN_CODE || mode == MULTIPROCESSOR_SYN_CODE) {
@@ -165,6 +167,9 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
                 commonActivity.scanResultView?.invalidate()
                 sendEmptyMessageDelayed(1, 1000)
             } else {
+                val intent = Intent()
+                intent.putExtra(SCAN_RESULT, arr)
+                activity.setResult(Activity.RESULT_OK, intent)
                 activity.finish()
             }
         } else if (message.what == 1) {
@@ -174,10 +179,12 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
     }
 
     fun quit() {
+        removeCallbacksAndMessages(null)
+        decodeHandle?.removeCallbacksAndMessages(null)
         try {
             cameraOperation.stopPreview()
-            decodeHandle!!.looper.quit()
-            decodeThread!!.join(500)
+            decodeHandle?.looper?.quit()
+            decodeThread?.join(500)
         } catch (e: InterruptedException) {
             Log.w(TAG, e)
         }

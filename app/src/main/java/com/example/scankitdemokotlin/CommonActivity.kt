@@ -129,7 +129,7 @@ class CommonActivity :Activity(){
     private fun setBackOperation() {
         backBtn = findViewById(R.id.back_img)
         backBtn?.setOnClickListener(View.OnClickListener {
-            if (mode == MULTIPROCESSOR_ASYN_CODE || mode ==MULTIPROCESSOR_SYN_CODE) {
+            if (mode == MULTIPROCESSOR_ASYN_CODE || mode == MULTIPROCESSOR_SYN_CODE) {
                 setResult(RESULT_CANCELED)
             }
             finish()
@@ -140,7 +140,7 @@ class CommonActivity :Activity(){
         if (mode == MULTIPROCESSOR_ASYN_CODE || mode == MULTIPROCESSOR_SYN_CODE) {
             setResult(RESULT_CANCELED)
         }
-        finish()
+        super.onBackPressed()
     }
 
     private fun setPictureScanOperation() {

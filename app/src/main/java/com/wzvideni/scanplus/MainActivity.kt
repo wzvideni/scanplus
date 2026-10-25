@@ -105,8 +105,9 @@ fun ScanScreen(modifier: Modifier = Modifier) {
                 factory = { ctx ->
                     Camera2ScanView(ctx).apply {
                         this.onScanResult = { results ->
-                            if (results.isNotEmpty() && lastResult == null) {
-                                lastResult = results[0]
+                            val valid = results.firstOrNull { !it.originalValue.isNullOrEmpty() }
+                            if (valid != null && lastResult == null) {
+                                lastResult = valid
                             }
                         }
                         this.setTorch(isTorchOn)
@@ -116,8 +117,9 @@ fun ScanScreen(modifier: Modifier = Modifier) {
                 },
                 update = { view ->
                     view.onScanResult = { results ->
-                        if (results.isNotEmpty() && lastResult == null) {
-                            lastResult = results[0]
+                        val valid = results.firstOrNull { !it.originalValue.isNullOrEmpty() }
+                        if (valid != null && lastResult == null) {
+                            lastResult = valid
                         }
                     }
                     view.setTorch(isTorchOn)
