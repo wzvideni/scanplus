@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.view.Surface
 import com.huawei.hms.scankit.ScanPlusConfig
+import com.huawei.hms.scankit.util.ScanLog
 
 /**
  * Shared utility for calculating and resolving camera display orientation across
@@ -69,10 +70,14 @@ object CameraOrientationUtils {
         isFront: Boolean,
         fallbackDisplayOrientation: Int
     ): Int {
-        ScanPlusConfig.customDisplayOrientation?.let { return it }
-        if (ScanPlusConfig.autoAdaptSensorOrientation) {
-            return calculateDynamicOrientation(context, sensorOrientation, isFront)
+        val result = if (ScanPlusConfig.customDisplayOrientation != null) {
+            ScanPlusConfig.customDisplayOrientation!!
+        } else if (ScanPlusConfig.autoAdaptSensorOrientation) {
+            calculateDynamicOrientation(context, sensorOrientation, isFront)
+        } else {
+            fallbackDisplayOrientation
         }
-        return fallbackDisplayOrientation
+        ScanLog.d("ScanPlusOrientation", "getEffectiveOrientation: sensorOrientation=$sensorOrientation, isFront=$isFront, autoAdapt=${ScanPlusConfig.autoAdaptSensorOrientation}, fallback=$fallbackDisplayOrientation, custom=${ScanPlusConfig.customDisplayOrientation} => RESULT=$result")
+        return result
     }
 }

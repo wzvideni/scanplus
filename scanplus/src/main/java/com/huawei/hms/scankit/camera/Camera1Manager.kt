@@ -196,6 +196,7 @@ class Camera1Manager(
 
         // 7. Orientation: if sensorOrientation is 0, device hardware preview is upright at 0 degrees.
         val finalOrientation = getEffectiveDisplayOrientation()
+        ScanLog.d(TAG, "Camera1 initCameraParameters: setDisplayOrientation($finalOrientation)")
         cam.setDisplayOrientation(finalOrientation)
 
         try {
@@ -245,6 +246,42 @@ class Camera1Manager(
         }
     }
 
+    private fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        val view = textureView ?: return
+        if (viewWidth == 0 || viewHeight == 0) return
+        if (previewSize.x == 0 || previewSize.y == 0) return
+
+        val previewLong = maxOf(previewSize.x, previewSize.y).toFloat()
+        val previewShort = minOf(previewSize.x, previewSize.y).toFloat()
+        val imageRatio = previewShort / previewLong // e.g. 1080 / 1920 = 9:16 = 0.5625
+
+        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
+
+        val scaleX: Float
+        val scaleY: Float
+
+        if (viewRatio < imageRatio) {
+            scaleX = (viewHeight * imageRatio) / viewWidth
+            scaleY = 1.0f
+        } else {
+            scaleX = 1.0f
+            scaleY = (viewWidth / imageRatio) / viewHeight
+        }
+
+        val matrix = android.graphics.Matrix()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        matrix.setScale(scaleX, scaleY, centerX, centerY)
+
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            view.setTransform(matrix)
+        } else {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                view.setTransform(matrix)
+            }
+        }
+    }
+
     @Synchronized
     override fun attachTextureView(view: TextureView) {
         this.textureView = view
@@ -258,6 +295,9 @@ class Camera1Manager(
             } catch (e: Exception) {
                 ScanLog.e(TAG, "setPreviewTexture failed", e)
             }
+        }
+        if (view.width > 0 && view.height > 0) {
+            configureTransform(view.width, view.height)
         }
     }
 

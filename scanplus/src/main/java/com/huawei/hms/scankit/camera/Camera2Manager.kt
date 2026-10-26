@@ -25,6 +25,7 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
+import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.p.k0
 import com.huawei.hms.scankit.util.ImageConversionUtils
 import com.huawei.hms.scankit.util.ScanLog
@@ -242,39 +243,42 @@ class Camera2Manager(
         if (viewWidth == 0 || viewHeight == 0) return
         if (previewSize.x == 0 || previewSize.y == 0) return
 
-        val rotationDegrees = getRotationDegrees()
+        val previewLong = maxOf(previewSize.x, previewSize.y).toFloat()
+        val previewShort = minOf(previewSize.x, previewSize.y).toFloat()
+        val imageRatio = previewShort / previewLong // e.g. 1080 / 1920 = 9:16 = 0.5625
+
+        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
+
+        val scaleX: Float
+        val scaleY: Float
+
+        if (viewRatio < imageRatio) {
+            // View is taller/narrower than camera preview (e.g. 640x1280 vs 9:16)
+            // Scale width up to maintain aspect ratio and crop overflow on left/right
+            scaleX = (viewHeight * imageRatio) / viewWidth
+            scaleY = 1.0f
+        } else {
+            // View is wider than camera preview
+            // Scale height up to maintain aspect ratio and crop overflow on top/bottom
+            scaleX = 1.0f
+            scaleY = (viewWidth / imageRatio) / viewHeight
+        }
 
         val matrix = Matrix()
         val centerX = viewWidth / 2f
         val centerY = viewHeight / 2f
+        matrix.setScale(scaleX, scaleY, centerX, centerY)
 
-        if (rotationDegrees == 90 || rotationDegrees == 270) {
-            val rotatedW = previewSize.y.toFloat()
-            val rotatedH = previewSize.x.toFloat()
-            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
-
-            val scaleX = scale * previewSize.y / viewHeight
-            val scaleY = scale * previewSize.x / viewWidth
-
-            matrix.postRotate(rotationDegrees.toFloat(), centerX, centerY)
-            matrix.postScale(scaleX, scaleY, centerX, centerY)
-        } else {
-            val rotatedW = previewSize.x.toFloat()
-            val rotatedH = previewSize.y.toFloat()
-            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
-
-            val scaleX = scale * previewSize.x / viewWidth
-            val scaleY = scale * previewSize.y / viewHeight
-
-            if (rotationDegrees == 180) {
-                matrix.postRotate(180f, centerX, centerY)
+        // Manual rotation override if explicitly specified by developer
+        ScanPlusConfig.customDisplayOrientation?.let { customRot ->
+            if (customRot != 0) {
+                matrix.postRotate(customRot.toFloat(), centerX, centerY)
             }
-            matrix.postScale(scaleX, scaleY, centerX, centerY)
         }
 
         ScanLog.i(
             TAG,
-            "configureTransform: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, rotationDegrees=$rotationDegrees"
+            "configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, scale=(${scaleX}, ${scaleY})"
         )
 
         if (Looper.myLooper() == Looper.getMainLooper()) {

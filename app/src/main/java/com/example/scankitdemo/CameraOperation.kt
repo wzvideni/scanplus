@@ -80,15 +80,11 @@ class CameraOperation {
     }
 
     fun getEffectiveWidth(): Int {
-        val rotationDegrees = getRotationDegrees()
-        val isBufferSwapped = (rotationDegrees == 90 || rotationDegrees == 270)
-        return if (isBufferSwapped) previewHeight else previewWidth
+        return minOf(previewWidth, previewHeight)
     }
 
     fun getEffectiveHeight(): Int {
-        val rotationDegrees = getRotationDegrees()
-        val isBufferSwapped = (rotationDegrees == 90 || rotationDegrees == 270)
-        return if (isBufferSwapped) previewWidth else previewHeight
+        return maxOf(previewWidth, previewHeight)
     }
 
     /**
@@ -256,38 +252,37 @@ class CameraOperation {
         if (viewWidth == 0 || viewHeight == 0) return
         if (previewWidth == 0 || previewHeight == 0) return
 
-        val rotationDegrees = getRotationDegrees()
+        val previewLong = maxOf(previewWidth, previewHeight).toFloat()
+        val previewShort = minOf(previewWidth, previewHeight).toFloat()
+        val imageRatio = previewShort / previewLong // e.g. 1080 / 1920 = 9:16 = 0.5625
+
+        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
+
+        val scaleX: Float
+        val scaleY: Float
+
+        if (viewRatio < imageRatio) {
+            // View is taller/narrower than camera preview (e.g. 640x1280 vs 9:16)
+            scaleX = (viewHeight * imageRatio) / viewWidth
+            scaleY = 1.0f
+        } else {
+            // View is wider than camera preview
+            scaleX = 1.0f
+            scaleY = (viewWidth / imageRatio) / viewHeight
+        }
 
         val matrix = Matrix()
         val centerX = viewWidth / 2f
         val centerY = viewHeight / 2f
+        matrix.setScale(scaleX, scaleY, centerX, centerY)
 
-        if (rotationDegrees == 90 || rotationDegrees == 270) {
-            val rotatedW = previewHeight.toFloat()
-            val rotatedH = previewWidth.toFloat()
-            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
-
-            val scaleX = scale * previewHeight / viewHeight
-            val scaleY = scale * previewWidth / viewWidth
-
-            matrix.postRotate(rotationDegrees.toFloat(), centerX, centerY)
-            matrix.postScale(scaleX, scaleY, centerX, centerY)
-        } else {
-            val rotatedW = previewWidth.toFloat()
-            val rotatedH = previewHeight.toFloat()
-            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
-
-            val scaleX = scale * previewWidth / viewWidth
-            val scaleY = scale * previewHeight / viewHeight
-
-            if (rotationDegrees == 180) {
-                matrix.postRotate(180f, centerX, centerY)
+        ScanPlusConfig.customDisplayOrientation?.let { customRot ->
+            if (customRot != 0) {
+                matrix.postRotate(customRot.toFloat(), centerX, centerY)
             }
-            matrix.postScale(scaleX, scaleY, centerX, centerY)
         }
 
-        Log.i(TAG, "configureTransform: view=${viewWidth}x${viewHeight}, preview=${previewWidth}x${previewHeight}, rotationDegrees=$rotationDegrees")
-
+        Log.i(TAG, "configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewWidth}x${previewHeight}, scale=(${scaleX}, ${scaleY})")
         if (Looper.myLooper() == Looper.getMainLooper()) {
             view.setTransform(matrix)
         } else {
