@@ -72,6 +72,7 @@ class Camera2ScanView @JvmOverloads constructor(
                 width: Int,
                 height: Int
             ) {
+                ensureManager().attachPreview(textureView)
             }
 
             override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {

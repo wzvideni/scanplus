@@ -1,26 +1,36 @@
 package com.example.scankitdemo
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
 import android.media.ImageReader
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.Message
 import android.util.Log
+import android.util.Size
 import android.view.Surface
 import android.view.SurfaceHolder
+import android.view.TextureView
+import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.util.ImageConversionUtils
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
 
 /**
  * Modern Camera2 implementation of [CameraOperation] in Kotlin.
  * Replaces the legacy Camera1 API for MultiProcessor scanning in [CommonActivity].
+ * Supports TextureView preview with proper CenterCrop transform and aspect ratio preservation.
  */
 class CameraOperation {
     companion object {
@@ -53,41 +63,100 @@ class CameraOperation {
 
     private var maxZoomRatio: Float = 1.0f
     private var sensorActiveArraySize: Rect? = null
+    private var sensorOrientation: Int = 90
+
+    private var textureView: TextureView? = null
+    private var surfaceHolder: SurfaceHolder? = null
+    private var frameBuffer: ByteArray? = null
+
+    fun getRotationDegrees(): Int {
+        val ctx = textureView?.context ?: return 0
+        return com.huawei.hms.scankit.camera.CameraOrientationUtils.getEffectiveOrientation(
+            context = ctx,
+            sensorOrientation = sensorOrientation,
+            isFront = false,
+            fallbackDisplayOrientation = 90
+        )
+    }
+
+    fun getEffectiveWidth(): Int {
+        val rotationDegrees = getRotationDegrees()
+        val isBufferSwapped = (rotationDegrees == 90 || rotationDegrees == 270)
+        return if (isBufferSwapped) previewHeight else previewWidth
+    }
+
+    fun getEffectiveHeight(): Int {
+        val rotationDegrees = getRotationDegrees()
+        val isBufferSwapped = (rotationDegrees == 90 || rotationDegrees == 270)
+        return if (isBufferSwapped) previewWidth else previewHeight
+    }
 
     /**
-     * Opens the camera using Camera2 and attaches to the SurfaceHolder.
+     * Opens the camera using Camera2 and attaches to the TextureView.
+     */
+    @SuppressLint("MissingPermission")
+    @Synchronized
+    fun open(view: TextureView) {
+        this.textureView = view
+        this.surfaceHolder = null
+        startBackgroundThread()
+
+        val cm = getCameraManager(view.context)
+        openCameraInternal(cm) {
+            createSessionForTextureView(view)
+        }
+    }
+
+    /**
+     * Opens the camera using Camera2 and attaches to the SurfaceHolder (compatibility).
      */
     @SuppressLint("MissingPermission")
     @Synchronized
     fun open(holder: SurfaceHolder?) {
         if (holder == null) return
+        this.surfaceHolder = holder
+        this.textureView = null
         startBackgroundThread()
 
         val cm = (cameraManager ?: run {
-            // We can retrieve CameraManager via reflection or common service
             val appClass = Class.forName("android.app.ActivityThread")
             val appMethod = appClass.getMethod("currentApplication")
             val app = appMethod.invoke(null) as Context
-            (app.getSystemService(Context.CAMERA_SERVICE) as CameraManager).also { cameraManager = it }
+            getCameraManager(app)
         })
 
+        openCameraInternal(cm) {
+            createSessionForSurfaceHolder(holder)
+        }
+    }
+
+    private fun getCameraManager(context: Context): CameraManager {
+        return (cameraManager ?: (context.getSystemService(Context.CAMERA_SERVICE) as CameraManager).also {
+            cameraManager = it
+        })
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun openCameraInternal(cm: CameraManager, onOpenedAction: () -> Unit) {
         try {
-            for (id in cm.cameraIdList) {
-                val chars = cm.getCameraCharacteristics(id)
-                val facing = chars.get(CameraCharacteristics.LENS_FACING)
-                if (facing == CameraCharacteristics.LENS_FACING_BACK) {
-                    cameraId = id
+            if (cameraId == null) {
+                for (id in cm.cameraIdList) {
+                    val chars = cm.getCameraCharacteristics(id)
+                    val facing = chars.get(CameraCharacteristics.LENS_FACING)
+                    if (facing == CameraCharacteristics.LENS_FACING_BACK) {
+                        cameraId = id
+                        cameraCharacteristics = chars
+                        initCharacteristics(chars)
+                        break
+                    }
+                }
+                if (cameraId == null && cm.cameraIdList.isNotEmpty()) {
+                    val fallbackId = cm.cameraIdList[0]
+                    cameraId = fallbackId
+                    val chars = cm.getCameraCharacteristics(fallbackId)
                     cameraCharacteristics = chars
                     initCharacteristics(chars)
-                    break
                 }
-            }
-            if (cameraId == null && cm.cameraIdList.isNotEmpty()) {
-                val fallbackId = cm.cameraIdList[0]
-                cameraId = fallbackId
-                val chars = cm.getCameraCharacteristics(fallbackId)
-                cameraCharacteristics = chars
-                initCharacteristics(chars)
             }
 
             val id = cameraId ?: return
@@ -100,7 +169,7 @@ class CameraOperation {
                 override fun onOpened(camera: CameraDevice) {
                     cameraOpenCloseLock.release()
                     cameraDevice = camera
-                    createSession(holder)
+                    onOpenedAction()
                 }
 
                 override fun onDisconnected(camera: CameraDevice) {
@@ -124,6 +193,7 @@ class CameraOperation {
 
     private fun initCharacteristics(chars: CameraCharacteristics) {
         sensorActiveArraySize = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+        sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val range = chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
             maxZoomRatio = range?.upper ?: chars.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1.0f
@@ -136,31 +206,131 @@ class CameraOperation {
     private fun selectOptimalSize(chars: CameraCharacteristics) {
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
         val yuvSizes = map.getOutputSizes(ImageFormat.YUV_420_888)?.toList() ?: return
-        if (yuvSizes.isEmpty()) return
+        val surfaceSizes = map.getOutputSizes(SurfaceTexture::class.java)?.toList() ?: emptyList()
+        val choices = yuvSizes.filter { surfaceSizes.contains(it) }.ifEmpty { yuvSizes }
+        if (choices.isEmpty()) return
 
-        val size1080p = yuvSizes.firstOrNull { it.width == 1920 && it.height == 1080 }
-        val size720p = yuvSizes.firstOrNull { it.width == 1280 && it.height == 720 }
+        val targetRatio = 16.0 / 9.0
+        val exactMatch = choices.firstOrNull { it.width == PREVIEW_WIDTH && it.height == PREVIEW_HEIGHT }
+        if (exactMatch != null) {
+            previewWidth = exactMatch.width
+            previewHeight = exactMatch.height
+            Log.i(TAG, "Selected exact preview size: $previewWidth x $previewHeight")
+            return
+        }
 
-        val selected = size1080p ?: size720p ?: yuvSizes.firstOrNull {
-            val ratio = it.width.toDouble() / it.height.toDouble()
-            Math.abs(ratio - (16.0 / 9.0)) < 0.05
-        } ?: yuvSizes[0]
+        var bestSize: Size? = null
+        var minDiff = Double.MAX_VALUE
+        var bestDistToTarget = Int.MAX_VALUE
 
-        previewWidth = selected.width
-        previewHeight = selected.height
-        Log.i(TAG, "Selected preview size: $previewWidth x $previewHeight")
+        val sorted = choices.sortedWith(compareByDescending { it.width.toLong() * it.height.toLong() })
+        for (size in sorted) {
+            val w = size.width
+            val h = size.height
+            if (w.toLong() * h.toLong() < 153600L) continue
+
+            val ratio = maxOf(w, h).toDouble() / minOf(w, h).toDouble().coerceAtLeast(1.0)
+            val diff = abs(ratio - targetRatio)
+            val dist = abs(w - PREVIEW_WIDTH) + abs(h - PREVIEW_HEIGHT)
+
+            if (diff < minDiff - 0.01) {
+                minDiff = diff
+                bestDistToTarget = dist
+                bestSize = size
+            } else if (abs(diff - minDiff) <= 0.01) {
+                if (dist < bestDistToTarget) {
+                    bestDistToTarget = dist
+                    bestSize = size
+                }
+            }
+        }
+
+        val chosen = bestSize ?: sorted[0]
+        previewWidth = chosen.width
+        previewHeight = chosen.height
+        Log.i(TAG, "Selected optimal preview size: $previewWidth x $previewHeight")
     }
 
-    private fun createSession(holder: SurfaceHolder) {
+    fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        val view = textureView ?: return
+        if (viewWidth == 0 || viewHeight == 0) return
+        if (previewWidth == 0 || previewHeight == 0) return
+
+        val rotationDegrees = getRotationDegrees()
+
+        val matrix = Matrix()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+
+        if (rotationDegrees == 90 || rotationDegrees == 270) {
+            val rotatedW = previewHeight.toFloat()
+            val rotatedH = previewWidth.toFloat()
+            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
+
+            val scaleX = scale * previewHeight / viewHeight
+            val scaleY = scale * previewWidth / viewWidth
+
+            matrix.postRotate(rotationDegrees.toFloat(), centerX, centerY)
+            matrix.postScale(scaleX, scaleY, centerX, centerY)
+        } else {
+            val rotatedW = previewWidth.toFloat()
+            val rotatedH = previewHeight.toFloat()
+            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
+
+            val scaleX = scale * previewWidth / viewWidth
+            val scaleY = scale * previewHeight / viewHeight
+
+            if (rotationDegrees == 180) {
+                matrix.postRotate(180f, centerX, centerY)
+            }
+            matrix.postScale(scaleX, scaleY, centerX, centerY)
+        }
+
+        Log.i(TAG, "configureTransform: view=${viewWidth}x${viewHeight}, preview=${previewWidth}x${previewHeight}, rotationDegrees=$rotationDegrees")
+
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            view.setTransform(matrix)
+        } else {
+            Handler(Looper.getMainLooper()).post {
+                view.setTransform(matrix)
+            }
+        }
+    }
+
+    private fun createSessionForTextureView(view: TextureView) {
+        val texture = view.surfaceTexture ?: return
+        texture.setDefaultBufferSize(previewWidth, previewHeight)
+        val surface = Surface(texture)
+        previewSurface = surface
+
+        if (view.width > 0 && view.height > 0) {
+            configureTransform(view.width, view.height)
+        }
+
+        view.addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
+            val w = r - l
+            val h = b - t
+            if (w > 0 && h > 0 && (w != (or - ol) || h != (ob - ot))) {
+                configureTransform(w, h)
+            }
+        }
+
+        createSessionInternal(surface)
+    }
+
+    private fun createSessionForSurfaceHolder(holder: SurfaceHolder) {
+        val surface = holder.surface
+        if (!surface.isValid) {
+            Log.w(TAG, "Surface is not valid yet")
+            return
+        }
+        previewSurface = surface
+        createSessionInternal(surface)
+    }
+
+    private fun createSessionInternal(previewSurface: Surface) {
         val device = cameraDevice ?: return
         try {
-            val surface = holder.surface
-            if (!surface.isValid) {
-                Log.w(TAG, "Surface is not valid yet")
-                return
-            }
-            previewSurface = surface
-
             imageReader?.close()
             val reader = ImageReader.newInstance(previewWidth, previewHeight, ImageFormat.YUV_420_888, 3)
             imageReader = reader
@@ -170,19 +340,29 @@ class CameraOperation {
                 val handler = targetHandlerRef.getAndSet(null)
                 try {
                     if (handler != null) {
-                        val nv21 = ImageConversionUtils.yuv420888ToNv21(image)
+                        val requiredSize = image.width * image.height * 3 / 2
+                        if (frameBuffer == null || frameBuffer!!.size != requiredSize) {
+                            frameBuffer = ByteArray(requiredSize)
+                        }
+                        val nv21 = ImageConversionUtils.yuv420888ToNv21(image, frameBuffer)
                         val message = Message.obtain(handler, 0, image.width, image.height, nv21)
                         message.sendToTarget()
                     }
+                } catch (e: IllegalStateException) {
+                    // Closed concurrently
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in image callback", e)
                 } finally {
-                    image.close()
+                    try {
+                        image.close()
+                    } catch (e: Exception) {
+                        // ignore
+                    }
                 }
             }, backgroundHandler)
 
             val builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                addTarget(surface)
+                addTarget(previewSurface)
                 addTarget(reader.surface)
                 set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
                 set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
@@ -192,12 +372,19 @@ class CameraOperation {
 
             @Suppress("DEPRECATION")
             device.createCaptureSession(
-                listOf(surface, reader.surface),
+                listOf(previewSurface, reader.surface),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
                         if (cameraDevice == null) return
                         captureSession = session
                         startRepeating()
+                        textureView?.let { tv ->
+                            tv.post {
+                                if (tv.width > 0 && tv.height > 0) {
+                                    configureTransform(tv.width, tv.height)
+                                }
+                            }
+                        }
                     }
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
@@ -257,6 +444,8 @@ class CameraOperation {
             cameraDevice = null
             imageReader?.close()
             imageReader = null
+            previewSurface?.release()
+            previewSurface = null
         } catch (e: Exception) {
             Log.e(TAG, "Error closing camera", e)
         } finally {

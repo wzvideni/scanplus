@@ -48,7 +48,7 @@ class Camera2ScanManager(
     }
 
     private var activeCamera: ICameraManager? = null
-    private val camera1Manager by lazy { Camera1Manager() }
+    private val camera1Manager by lazy { Camera1Manager(context) }
     private val camera2Manager by lazy { Camera2Manager(context) }
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())

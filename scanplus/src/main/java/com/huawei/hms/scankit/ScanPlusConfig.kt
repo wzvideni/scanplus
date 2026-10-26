@@ -39,6 +39,21 @@ object ScanPlusConfig {
     var customDisplayOrientation: Int? = null
 
     /**
+     * Whether to automatically adapt camera display orientation based on hardware sensor orientation,
+     * device rotation, and lens facing (front/back) across both Camera1 and Camera2.
+     *
+     * Defaults to `false` to ensure 100% backward compatibility with original `scanplus-2.15.0.301.aar` contracts
+     * (which always uses ScanKit's fixed 90-degree contract in portrait mode).
+     *
+     * When set to `true`, both Camera1 and Camera2 will dynamically calculate the upright display orientation
+     * using the standard Android camera formula `(sensorOrientation - deviceRotation + 360) % 360`,
+     * automatically correcting orientations on non-standard hardware (e.g. 0° sensor POS terminals or handheld scanners)
+     * and responding to landscape/portrait screen rotations.
+     */
+    @JvmStatic
+    var autoAdaptSensorOrientation: Boolean = false
+
+    /**
      * Minimum log priority level to print when [isLogEnabled] is false.
      * Use standard Android Log priorities: [Log.VERBOSE], [Log.DEBUG], [Log.INFO], [Log.WARN], [Log.ERROR].
      * Defaults to [Log.WARN] (only warnings and errors are output by default).

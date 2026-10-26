@@ -4,7 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Point
+import android.graphics.SurfaceTexture
 import android.os.Bundle
 import android.provider.MediaStore
 import android.text.TextUtils
@@ -13,7 +13,6 @@ import android.view.*
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
 import android.view.animation.Animation.AnimationListener
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import com.example.scankitdemo.CameraOperation
@@ -30,18 +29,15 @@ import com.huawei.hms.ml.scan.HmsScan
 import com.huawei.hms.ml.scan.HmsScanAnalyzer
 import com.huawei.hms.ml.scan.HmsScanAnalyzerOptions
 import com.huawei.hms.mlsdk.common.MLFrame
-import java.io.IOException
 import java.util.*
 
-
-class CommonActivity :Activity(){
+class CommonActivity : Activity() {
     private var backBtn: ImageView? = null
     private var imgBtn: ImageView? = null
     private var mscanArs: ImageView? = null
     private var mscanTips: TextView? = null
-    private var surfaceHolder: SurfaceHolder? = null
+    private var cameraPreview: TextureView? = null
     private var cameraOperation: CameraOperation? = null
-    private var surfaceCallBack: SurfaceCallBack? = null
     private var handler: CommonHandler? = null
     val defaultValue = -1
     var mode = defaultValue
@@ -49,7 +45,7 @@ class CommonActivity :Activity(){
     var isShow = false
     var scanResultView: ScanResultView? = null
 
-    companion object{
+    companion object {
         const val TAG = "commonActivity"
         const val SCAN_RESULT = "scanResult"
     }
@@ -65,15 +61,13 @@ class CommonActivity :Activity(){
         mscanArs = findViewById(R.id.scan_ars)
         mscanTips = findViewById(R.id.scan_tip)
         if (mode == MULTIPROCESSOR_ASYN_CODE || mode == MULTIPROCESSOR_SYN_CODE) {
-            mscanArs?.setVisibility(View.INVISIBLE)
+            mscanArs?.visibility = View.INVISIBLE
             mscanTips?.setText(R.string.scan_showresult)
             val disappearAnimation = AlphaAnimation(1f, 0f)
             disappearAnimation.setAnimationListener(object : AnimationListener {
                 override fun onAnimationStart(animation: Animation) {}
                 override fun onAnimationEnd(animation: Animation) {
-                    if (mscanTips != null) {
-                        mscanTips?.setVisibility(View.GONE)
-                    }
+                    mscanTips?.visibility = View.GONE
                 }
 
                 override fun onAnimationRepeat(animation: Animation) {}
@@ -81,11 +75,31 @@ class CommonActivity :Activity(){
             disappearAnimation.duration = 3000
             mscanTips?.startAnimation(disappearAnimation)
         }
+
         cameraOperation = CameraOperation()
-        surfaceCallBack = SurfaceCallBack()
-        val cameraPreview = findViewById<SurfaceView>(R.id.surfaceView)
-        adjustSurface(cameraPreview)
-        surfaceHolder = cameraPreview.holder
+        val preview = findViewById<TextureView>(R.id.surfaceView)
+        cameraPreview = preview
+
+        preview.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+                isShow = true
+                initCamera()
+                cameraOperation?.configureTransform(width, height)
+            }
+
+            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+                cameraOperation?.configureTransform(width, height)
+            }
+
+            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+                isShow = false
+                cameraOperation?.close()
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+        }
+
         isShow = false
         setBackOperation()
         setPictureScanOperation()
@@ -93,47 +107,14 @@ class CommonActivity :Activity(){
         scanResultView = findViewById(R.id.scan_result_view)
     }
 
-
-    private fun adjustSurface(cameraPreview: SurfaceView) {
-        val paramSurface = cameraPreview.layoutParams as FrameLayout.LayoutParams
-        if (getSystemService(Context.WINDOW_SERVICE) != null) {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val defaultDisplay = windowManager.defaultDisplay
-            val outPoint = Point()
-            defaultDisplay.getRealSize(outPoint)
-            val sceenWidth = outPoint.x.toFloat()
-            val sceenHeight = outPoint.y.toFloat()
-            val rate: Float
-            if (sceenWidth / 1080.toFloat() > sceenHeight / 1920.toFloat()) {
-                rate = sceenWidth / 1080.toFloat()
-                val targetHeight = (1920 * rate).toInt()
-                paramSurface.width = FrameLayout.LayoutParams.MATCH_PARENT
-                paramSurface.height = targetHeight
-                val topMargin = (-(targetHeight - sceenHeight) / 2).toInt()
-                if (topMargin < 0) {
-                    paramSurface.topMargin = topMargin
-                }
-            } else {
-                rate = sceenHeight / 1920.toFloat()
-                val targetWidth = (1080 * rate).toInt()
-                paramSurface.width = targetWidth
-                paramSurface.height = FrameLayout.LayoutParams.MATCH_PARENT
-                val leftMargin = (-(targetWidth - sceenWidth) / 2).toInt()
-                if (leftMargin < 0) {
-                    paramSurface.leftMargin = leftMargin
-                }
-            }
-        }
-    }
-
     private fun setBackOperation() {
         backBtn = findViewById(R.id.back_img)
-        backBtn?.setOnClickListener(View.OnClickListener {
+        backBtn?.setOnClickListener {
             if (mode == MULTIPROCESSOR_ASYN_CODE || mode == MULTIPROCESSOR_SYN_CODE) {
                 setResult(RESULT_CANCELED)
             }
             finish()
-        })
+        }
     }
 
     override fun onBackPressed() {
@@ -145,20 +126,22 @@ class CommonActivity :Activity(){
 
     private fun setPictureScanOperation() {
         imgBtn = findViewById(R.id.img_btn)
-        imgBtn?.setOnClickListener(View.OnClickListener {
-            val pickIntent = Intent(Intent.ACTION_PICK,
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+        imgBtn?.setOnClickListener {
+            val pickIntent = Intent(
+                Intent.ACTION_PICK,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            )
             pickIntent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
             this@CommonActivity.startActivityForResult(pickIntent, REQUEST_CODE_PHOTO)
-        })
+        }
     }
 
     override fun onResume() {
         super.onResume()
-        if (isShow) {
+        val tv = cameraPreview
+        if (tv != null && tv.isAvailable) {
             initCamera()
-        } else {
-            surfaceHolder!!.addCallback(surfaceCallBack)
+            cameraOperation?.configureTransform(tv.width, tv.height)
         }
     }
 
@@ -167,26 +150,24 @@ class CommonActivity :Activity(){
             handler?.quit()
             handler = null
         }
-        cameraOperation!!.close()
-        if (!isShow) {
-            surfaceHolder!!.removeCallback(surfaceCallBack)
-        }
+        cameraOperation?.close()
         super.onPause()
     }
 
     override fun onDestroy() {
-        surfaceHolder?.removeCallback(surfaceCallBack)
         super.onDestroy()
     }
 
     private fun initCamera() {
+        val tv = cameraPreview ?: return
+        if (!tv.isAvailable) return
         try {
-            cameraOperation!!.open(surfaceHolder)
+            cameraOperation!!.open(tv)
             if (handler == null) {
                 handler = CommonHandler(this@CommonActivity, cameraOperation!!, mode)
             }
-        } catch (e: IOException) {
-            Log.w(TAG, e)
+        } catch (e: Exception) {
+            Log.w(TAG, "initCamera error: ${e.message}", e)
         }
     }
 
@@ -247,19 +228,4 @@ class CommonActivity :Activity(){
             finish()
         }
     }
-
-    inner class SurfaceCallBack : SurfaceHolder.Callback {
-        override fun surfaceCreated(holder: SurfaceHolder) {
-            if (!isShow) {
-                isShow = true
-                initCamera()
-            }
-        }
-
-        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-        override fun surfaceDestroyed(holder: SurfaceHolder) {
-            isShow = false
-        }
-    }
-
 }

@@ -163,7 +163,7 @@ class CommonHandler(val activity: Activity, val cameraOperation: CameraOperation
                         commonActivity.scanResultView?.add(HmsScanGraphic(commonActivity.scanResultView!!, arr[i], color))
                     }
                 }
-                commonActivity.scanResultView?.setCameraInfo(1080, 1920)
+                commonActivity.scanResultView?.setCameraInfo(cameraOperation.getEffectiveWidth(), cameraOperation.getEffectiveHeight(), cameraOperation.getRotationDegrees())
                 commonActivity.scanResultView?.invalidate()
                 sendEmptyMessageDelayed(1, 1000)
             } else {

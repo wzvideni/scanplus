@@ -43,7 +43,8 @@ import kotlin.math.abs
 class Camera2Manager(
     private val context: Context,
     private val lensFacing: Int = CameraCharacteristics.LENS_FACING_BACK,
-    private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
+    private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
+    private var displayOrientation: Int = 90
 ) : ICameraManager {
     companion object {
         private const val TAG = "ScanKitCamera2"
@@ -227,36 +228,54 @@ class Camera2Manager(
         }
     }
 
+    private fun getRotationDegrees(): Int {
+        return CameraOrientationUtils.getEffectiveOrientation(
+            context = context,
+            sensorOrientation = sensorOrientation,
+            isFront = (lensFacing == CameraCharacteristics.LENS_FACING_FRONT),
+            fallbackDisplayOrientation = displayOrientation
+        )
+    }
+
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
         val view = textureView ?: return
         if (viewWidth == 0 || viewHeight == 0) return
+        if (previewSize.x == 0 || previewSize.y == 0) return
 
-        val activity = context as? Activity
-        val rotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            activity?.display?.rotation ?: Surface.ROTATION_0
-        } else {
-            @Suppress("DEPRECATION")
-            activity?.windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
-        }
+        val rotationDegrees = getRotationDegrees()
 
         val matrix = Matrix()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, previewSize.y.toFloat(), previewSize.x.toFloat())
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
 
-        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-            val scale = maxOf(
-                viewHeight.toFloat() / previewSize.y,
-                viewWidth.toFloat() / previewSize.x
-            )
-            matrix.postScale(scale, scale, centerX, centerY)
-            matrix.postRotate((90 * (rotation - 2)).toFloat(), centerX, centerY)
-        } else if (Surface.ROTATION_180 == rotation) {
-            matrix.postRotate(180f, centerX, centerY)
+        if (rotationDegrees == 90 || rotationDegrees == 270) {
+            val rotatedW = previewSize.y.toFloat()
+            val rotatedH = previewSize.x.toFloat()
+            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
+
+            val scaleX = scale * previewSize.y / viewHeight
+            val scaleY = scale * previewSize.x / viewWidth
+
+            matrix.postRotate(rotationDegrees.toFloat(), centerX, centerY)
+            matrix.postScale(scaleX, scaleY, centerX, centerY)
+        } else {
+            val rotatedW = previewSize.x.toFloat()
+            val rotatedH = previewSize.y.toFloat()
+            val scale = maxOf(viewWidth.toFloat() / rotatedW, viewHeight.toFloat() / rotatedH)
+
+            val scaleX = scale * previewSize.x / viewWidth
+            val scaleY = scale * previewSize.y / viewHeight
+
+            if (rotationDegrees == 180) {
+                matrix.postRotate(180f, centerX, centerY)
+            }
+            matrix.postScale(scaleX, scaleY, centerX, centerY)
         }
+
+        ScanLog.i(
+            TAG,
+            "configureTransform: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, rotationDegrees=$rotationDegrees"
+        )
 
         if (Looper.myLooper() == Looper.getMainLooper()) {
             view.setTransform(matrix)
@@ -278,59 +297,65 @@ class Camera2Manager(
 
         if (choices.isEmpty()) return
 
+        val maxT = if (target.x > 0 && target.y > 0) maxOf(target.x, target.y) else 1920
+        val minT = if (target.x > 0 && target.y > 0) minOf(target.x, target.y) else 1080
+        val targetRatio = maxT.toDouble() / minT.toDouble().coerceAtLeast(1.0)
+
         // 1. If an exact match for target resolution exists, prioritize it (matching ScanKit contract)
-        if (target.x > 0 && target.y > 0) {
-            val maxT = maxOf(target.x, target.y)
-            val minT = minOf(target.x, target.y)
-            val exactMatch = choices.firstOrNull {
-                (it.width == target.x && it.height == target.y) ||
-                (it.width == maxT && it.height == minT)
-            }
-            if (exactMatch != null) {
-                previewSize = Point(exactMatch.width, exactMatch.height)
-                ScanLog.i(TAG, "Selected exact matching target preview size: ${previewSize.x} x ${previewSize.y}")
-                return
-            }
+        val exactMatch = choices.firstOrNull {
+            (it.width == maxT && it.height == minT) || (it.width == minT && it.height == maxT)
         }
-
-        // 2. ScanKit AAR baseline preferences: 1080p -> 720p
-        val size1080p = choices.firstOrNull { it.width == 1920 && it.height == 1080 }
-        val size720p = choices.firstOrNull { it.width == 1280 && it.height == 720 }
-
-        if (size1080p != null) {
-            previewSize = Point(1920, 1080)
-            ScanLog.i(TAG, "Selected preferred 1080p preview size: 1920 x 1080")
+        if (exactMatch != null) {
+            previewSize = Point(exactMatch.width, exactMatch.height)
+            ScanLog.i(TAG, "Selected exact matching target preview size: ${previewSize.x} x ${previewSize.y}")
             return
         }
 
-        if (size720p != null) {
-            previewSize = Point(1280, 720)
-            ScanLog.i(TAG, "Selected fallback 720p preview size: 1280 x 720")
-            return
-        }
-
-        // Otherwise find closest ratio to target
-        var bestSize: Size = choices[0]
+        // 2. ScanKit AAR baseline size selection (matching f0.a algorithm):
+        // Prioritize minimum aspect ratio difference against targetRatio,
+        // filtering out resolutions smaller than 153600 pixels (640x480)
+        // and capping at max 1920 to maintain high performance.
+        var bestSize: Size? = null
         var minDiff = Double.MAX_VALUE
-        val targetRatio = if (target.x > 0 && target.y > 0) {
-            val max = maxOf(target.x, target.y).toDouble()
-            val min = minOf(target.x, target.y).toDouble().coerceAtLeast(1.0)
-            max / min
-        } else {
-            16.0 / 9.0
-        }
+        var bestDistToTarget = Int.MAX_VALUE
 
-        for (size in choices) {
-            val ratio = size.width.toDouble() / size.height.toDouble()
+        val sortedChoices = choices.sortedWith(
+            compareByDescending<Size> { it.width.toLong() * it.height.toLong() }
+        )
+
+        for (size in sortedChoices) {
+            val w = size.width
+            val h = size.height
+            val pixels = w.toLong() * h.toLong()
+            if (pixels < 153600L) continue // Exclude tiny resolutions (< 640x480)
+
+            val maxS = maxOf(w, h).toDouble()
+            val minS = minOf(w, h).toDouble().coerceAtLeast(1.0)
+            val ratio = maxS / minS
             val diff = abs(ratio - targetRatio)
-            if (size.width in 640..1920 && diff < minDiff) {
+
+            val dist = abs(maxOf(w, h) - maxT) + abs(minOf(w, h) - minT)
+
+            if (diff < minDiff - 0.01) {
+                // Meaningfully closer aspect ratio match
                 minDiff = diff
+                bestDistToTarget = dist
                 bestSize = size
+            } else if (abs(diff - minDiff) <= 0.01) {
+                // Similar aspect ratio tier (e.g. both 16:9), choose the one closest to target resolution
+                if (dist < bestDistToTarget) {
+                    bestDistToTarget = dist
+                    bestSize = size
+                }
             }
         }
 
-        previewSize = Point(bestSize.width, bestSize.height)
-        ScanLog.i(TAG, "Selected optimal Camera2 preview size: ${previewSize.x} x ${previewSize.y}")
+        val chosen = bestSize ?: sortedChoices.first()
+        previewSize = Point(chosen.width, chosen.height)
+        ScanLog.i(
+            TAG,
+            "Selected optimal Camera2 preview size: ${previewSize.x} x ${previewSize.y} (target: ${target.x}x${target.y})"
+        )
     }
 
     /**
@@ -861,8 +886,6 @@ class Camera2Manager(
     override fun getPreviewSize(): Point = Point(previewSize.x, previewSize.y)
 
     override fun getSensorOrientation(): Int = sensorOrientation
-
-    private var displayOrientation: Int = 90
 
     @Synchronized
     override fun setDisplayOrientation(degrees: Int) {

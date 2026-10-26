@@ -1,5 +1,6 @@
 package com.huawei.hms.scankit.camera
 
+import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Point
@@ -9,7 +10,6 @@ import android.hardware.Camera
 import android.os.Build
 import android.util.Range
 import android.view.TextureView
-import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.p.k0
 import com.huawei.hms.scankit.util.ScanLog
 import java.io.IOException
@@ -22,6 +22,7 @@ import kotlin.math.roundToInt
  */
 @Suppress("DEPRECATION")
 class Camera1Manager(
+    private val context: Context,
     private val lensFacing: Int = Camera.CameraInfo.CAMERA_FACING_BACK,
     private val targetResolution: Point = Point(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
     private val recordingHint: Boolean = false,
@@ -117,7 +118,7 @@ class Camera1Manager(
             // If TextureView was attached before opening, bind it now
             textureView?.let { tv ->
                 cam.setPreviewTexture(tv.surfaceTexture)
-                val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
+                val finalOrientation = getEffectiveDisplayOrientation()
                 cam.setDisplayOrientation(finalOrientation)
             }
         } catch (e: Throwable) {
@@ -193,9 +194,8 @@ class Camera1Manager(
             }
         }
 
-        // 7. Orientation - match original ScanKit contract:
-        // Use customDisplayOrientation if explicitly set, otherwise displayOrientation (passed from e0Var.d(), 90 in portrait)
-        val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
+        // 7. Orientation: if sensorOrientation is 0, device hardware preview is upright at 0 degrees.
+        val finalOrientation = getEffectiveDisplayOrientation()
         cam.setDisplayOrientation(finalOrientation)
 
         try {
@@ -253,7 +253,7 @@ class Camera1Manager(
         if (cam != null && surfaceTexture != null) {
             try {
                 cam.setPreviewTexture(surfaceTexture)
-                val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: displayOrientation
+                val finalOrientation = getEffectiveDisplayOrientation()
                 cam.setDisplayOrientation(finalOrientation)
             } catch (e: Exception) {
                 ScanLog.e(TAG, "setPreviewTexture failed", e)
@@ -499,7 +499,7 @@ class Camera1Manager(
             if (lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT) -1.0f else 1.0f,
             1.0f
         )
-        matrix.postRotate(displayOrientation.toFloat())
+        matrix.postRotate(getEffectiveDisplayOrientation().toFloat())
         val invertMatrix = Matrix()
         matrix.invert(invertMatrix)
         invertMatrix.mapRect(rectF)
@@ -578,11 +578,20 @@ class Camera1Manager(
 
     override fun getSensorOrientation(): Int = sensorOrientation
 
+    private fun getEffectiveDisplayOrientation(degrees: Int = displayOrientation): Int {
+        return CameraOrientationUtils.getEffectiveOrientation(
+            context = context,
+            sensorOrientation = sensorOrientation,
+            isFront = (lensFacing == Camera.CameraInfo.CAMERA_FACING_FRONT),
+            fallbackDisplayOrientation = degrees
+        )
+    }
+
     @Synchronized
     override fun setDisplayOrientation(degrees: Int) {
         displayOrientation = degrees
         try {
-            val finalOrientation = ScanPlusConfig.customDisplayOrientation ?: degrees
+            val finalOrientation = getEffectiveDisplayOrientation(degrees)
             camera?.setDisplayOrientation(finalOrientation)
         } catch (e: Exception) {
             ScanLog.w(TAG, "setDisplayOrientation error", e)

@@ -110,6 +110,7 @@ class j0(
             Camera.CameraInfo.CAMERA_FACING_BACK
         }
         Camera1Manager(
+            context = context,
             lensFacing = facing,
             targetResolution = e0Var.a() ?: Point(
                 Camera1Manager.DEFAULT_PREVIEW_WIDTH,
@@ -132,7 +133,8 @@ class j0(
             targetResolution = e0Var.a() ?: Point(
                 Camera2Manager.DEFAULT_PREVIEW_WIDTH,
                 Camera2Manager.DEFAULT_PREVIEW_HEIGHT
-            )
+            ),
+            displayOrientation = e0Var.d()
         )
     }
 

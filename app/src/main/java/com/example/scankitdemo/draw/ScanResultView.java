@@ -61,10 +61,17 @@ public class ScanResultView extends View {
         }
     }
 
+    protected int rotationDegrees = 90;
+
     public void setCameraInfo(int previewWidth, int previewHeight) {
+        setCameraInfo(previewWidth, previewHeight, 90);
+    }
+
+    public void setCameraInfo(int previewWidth, int previewHeight, int rotationDegrees) {
         synchronized (lock) {
             this.previewWidth = previewWidth;
             this.previewHeight = previewHeight;
+            this.rotationDegrees = rotationDegrees;
         }
         postInvalidate();
     }
@@ -125,10 +132,22 @@ public class ScanResultView extends View {
 
             RectF rect = new RectF(hmsScan.getBorderRect());
             RectF other = new RectF();
-            other.left = canvas.getWidth()-scaleX(rect.top);
-            other.top = scaleY(rect.left);
-            other.right = canvas.getWidth()-scaleX(rect.bottom);
-            other.bottom = scaleY(rect.right);
+            if (scanResultView.rotationDegrees == 90) {
+                other.left = canvas.getWidth() - scaleX(rect.top);
+                other.top = scaleY(rect.left);
+                other.right = canvas.getWidth() - scaleX(rect.bottom);
+                other.bottom = scaleY(rect.right);
+            } else if (scanResultView.rotationDegrees == 270) {
+                other.left = scaleX(rect.top);
+                other.top = canvas.getHeight() - scaleY(rect.left);
+                other.right = scaleX(rect.bottom);
+                other.bottom = canvas.getHeight() - scaleY(rect.right);
+            } else {
+                other.left = scaleX(rect.left);
+                other.top = scaleY(rect.top);
+                other.right = scaleX(rect.right);
+                other.bottom = scaleY(rect.bottom);
+            }
             canvas.drawRect(other, rectPaint);
 
             canvas.drawText(hmsScan.getOriginalValue(), other.right, other.bottom, hmsScanResult);
