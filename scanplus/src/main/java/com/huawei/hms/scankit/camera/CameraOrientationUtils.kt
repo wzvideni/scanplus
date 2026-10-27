@@ -23,11 +23,7 @@ object CameraOrientationUtils {
      * @return Display orientation in degrees (0, 90, 180, or 270).
      */
     @JvmStatic
-    fun calculateDynamicOrientation(
-        context: Context,
-        sensorOrientation: Int,
-        isFront: Boolean
-    ): Int {
+    fun getDeviceRotationDegrees(context: Context): Int {
         val activity = context as? Activity
         val deviceRotation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             activity?.display?.rotation ?: Surface.ROTATION_0
@@ -36,14 +32,22 @@ object CameraOrientationUtils {
             activity?.windowManager?.defaultDisplay?.rotation ?: Surface.ROTATION_0
         }
 
-        val deviceDegrees = when (deviceRotation) {
+        return when (deviceRotation) {
             Surface.ROTATION_0 -> 0
             Surface.ROTATION_90 -> 90
             Surface.ROTATION_180 -> 180
             Surface.ROTATION_270 -> 270
             else -> 0
         }
+    }
 
+    @JvmStatic
+    fun calculateDynamicOrientation(
+        context: Context,
+        sensorOrientation: Int,
+        isFront: Boolean
+    ): Int {
+        val deviceDegrees = getDeviceRotationDegrees(context)
         return if (isFront) {
             val result = (sensorOrientation + deviceDegrees) % 360
             (360 - result) % 360

@@ -80,11 +80,17 @@ class CameraOperation {
     }
 
     fun getEffectiveWidth(): Int {
-        return minOf(previewWidth, previewHeight)
+        val ctx = textureView?.context
+        val deviceRotation = if (ctx != null) com.huawei.hms.scankit.camera.CameraOrientationUtils.getDeviceRotationDegrees(ctx) else 0
+        val isSensorPerpendicular = ((sensorOrientation - deviceRotation + 360) % 180 != 0)
+        return if (isSensorPerpendicular) minOf(previewWidth, previewHeight) else maxOf(previewWidth, previewHeight)
     }
 
     fun getEffectiveHeight(): Int {
-        return maxOf(previewWidth, previewHeight)
+        val ctx = textureView?.context
+        val deviceRotation = if (ctx != null) com.huawei.hms.scankit.camera.CameraOrientationUtils.getDeviceRotationDegrees(ctx) else 0
+        val isSensorPerpendicular = ((sensorOrientation - deviceRotation + 360) % 180 != 0)
+        return if (isSensorPerpendicular) maxOf(previewWidth, previewHeight) else minOf(previewWidth, previewHeight)
     }
 
     /**
@@ -252,24 +258,15 @@ class CameraOperation {
         if (viewWidth == 0 || viewHeight == 0) return
         if (previewWidth == 0 || previewHeight == 0) return
 
-        val previewLong = maxOf(previewWidth, previewHeight).toFloat()
-        val previewShort = minOf(previewWidth, previewHeight).toFloat()
-        val imageRatio = previewShort / previewLong // e.g. 1080 / 1920 = 9:16 = 0.5625
+        val ctx = view.context
+        val deviceRotation = com.huawei.hms.scankit.camera.CameraOrientationUtils.getDeviceRotationDegrees(ctx)
+        val isSensorPerpendicular = ((sensorOrientation - deviceRotation + 360) % 180 != 0)
+        val bufferW = if (isSensorPerpendicular) minOf(previewWidth, previewHeight).toFloat() else maxOf(previewWidth, previewHeight).toFloat()
+        val bufferH = if (isSensorPerpendicular) maxOf(previewWidth, previewHeight).toFloat() else minOf(previewWidth, previewHeight).toFloat()
 
-        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
-
-        val scaleX: Float
-        val scaleY: Float
-
-        if (viewRatio < imageRatio) {
-            // View is taller/narrower than camera preview (e.g. 640x1280 vs 9:16)
-            scaleX = (viewHeight * imageRatio) / viewWidth
-            scaleY = 1.0f
-        } else {
-            // View is wider than camera preview
-            scaleX = 1.0f
-            scaleY = (viewWidth / imageRatio) / viewHeight
-        }
+        val scale = maxOf(viewWidth.toFloat() / bufferW, viewHeight.toFloat() / bufferH)
+        val scaleX = scale * bufferW / viewWidth.toFloat()
+        val scaleY = scale * bufferH / viewHeight.toFloat()
 
         val matrix = Matrix()
         val centerX = viewWidth / 2f
@@ -282,7 +279,7 @@ class CameraOperation {
             }
         }
 
-        Log.i(TAG, "configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewWidth}x${previewHeight}, scale=(${scaleX}, ${scaleY})")
+        Log.i(TAG, "configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewWidth}x${previewHeight}, buffer=${bufferW}x${bufferH}, scale=(${scaleX}, ${scaleY})")
         if (Looper.myLooper() == Looper.getMainLooper()) {
             view.setTransform(matrix)
         } else {

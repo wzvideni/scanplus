@@ -11,6 +11,7 @@ import android.os.Build
 import android.util.Range
 import android.view.TextureView
 import com.huawei.hms.scankit.p.k0
+import com.huawei.hms.scankit.ScanPlusConfig
 import com.huawei.hms.scankit.util.ScanLog
 import java.io.IOException
 import kotlin.math.abs
@@ -251,27 +252,30 @@ class Camera1Manager(
         if (viewWidth == 0 || viewHeight == 0) return
         if (previewSize.x == 0 || previewSize.y == 0) return
 
-        val previewLong = maxOf(previewSize.x, previewSize.y).toFloat()
-        val previewShort = minOf(previewSize.x, previewSize.y).toFloat()
-        val imageRatio = previewShort / previewLong // e.g. 1080 / 1920 = 9:16 = 0.5625
+        val deviceRotation = CameraOrientationUtils.getDeviceRotationDegrees(context)
+        val isSensorPerpendicular = ((sensorOrientation - deviceRotation + 360) % 180 != 0)
+        val bufferW = if (isSensorPerpendicular) minOf(previewSize.x, previewSize.y).toFloat() else maxOf(previewSize.x, previewSize.y).toFloat()
+        val bufferH = if (isSensorPerpendicular) maxOf(previewSize.x, previewSize.y).toFloat() else minOf(previewSize.x, previewSize.y).toFloat()
 
-        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
-
-        val scaleX: Float
-        val scaleY: Float
-
-        if (viewRatio < imageRatio) {
-            scaleX = (viewHeight * imageRatio) / viewWidth
-            scaleY = 1.0f
-        } else {
-            scaleX = 1.0f
-            scaleY = (viewWidth / imageRatio) / viewHeight
-        }
+        val scale = maxOf(viewWidth.toFloat() / bufferW, viewHeight.toFloat() / bufferH)
+        val scaleX = scale * bufferW / viewWidth.toFloat()
+        val scaleY = scale * bufferH / viewHeight.toFloat()
 
         val matrix = android.graphics.Matrix()
         val centerX = viewWidth / 2f
         val centerY = viewHeight / 2f
         matrix.setScale(scaleX, scaleY, centerX, centerY)
+
+        ScanPlusConfig.customDisplayOrientation?.let { customRot ->
+            if (customRot != 0) {
+                matrix.postRotate(customRot.toFloat(), centerX, centerY)
+            }
+        }
+
+        ScanLog.i(
+            TAG,
+            "Camera1 configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, buffer=${bufferW}x${bufferH}, scale=(${scaleX}, ${scaleY})"
+        )
 
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
             view.setTransform(matrix)

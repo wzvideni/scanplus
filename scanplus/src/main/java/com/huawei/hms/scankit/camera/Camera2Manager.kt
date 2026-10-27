@@ -243,26 +243,20 @@ class Camera2Manager(
         if (viewWidth == 0 || viewHeight == 0) return
         if (previewSize.x == 0 || previewSize.y == 0) return
 
-        val previewLong = maxOf(previewSize.x, previewSize.y).toFloat()
-        val previewShort = minOf(previewSize.x, previewSize.y).toFloat()
-        val imageRatio = previewShort / previewLong // e.g. 1080 / 1920 = 9:16 = 0.5625
+        // Determine whether buffer arriving at TextureView has portrait or landscape dimensions on screen.
+        // For sensors mounted at 90° or 270° (standard phones and devices like YTD700),
+        // the hardware buffer stream on screen is portrait (buffer width = min dimension, buffer height = max dimension).
+        // For sensors mounted at 0° or 180° (landscape-mounted sensors like N6A1),
+        // the hardware buffer stream on screen is landscape (buffer width = max dimension, buffer height = min dimension).
+        val deviceRotation = CameraOrientationUtils.getDeviceRotationDegrees(context)
+        val isSensorPerpendicular = ((sensorOrientation - deviceRotation + 360) % 180 != 0)
+        val bufferW = if (isSensorPerpendicular) minOf(previewSize.x, previewSize.y).toFloat() else maxOf(previewSize.x, previewSize.y).toFloat()
+        val bufferH = if (isSensorPerpendicular) maxOf(previewSize.x, previewSize.y).toFloat() else minOf(previewSize.x, previewSize.y).toFloat()
 
-        val viewRatio = viewWidth.toFloat() / viewHeight.toFloat()
-
-        val scaleX: Float
-        val scaleY: Float
-
-        if (viewRatio < imageRatio) {
-            // View is taller/narrower than camera preview (e.g. 640x1280 vs 9:16)
-            // Scale width up to maintain aspect ratio and crop overflow on left/right
-            scaleX = (viewHeight * imageRatio) / viewWidth
-            scaleY = 1.0f
-        } else {
-            // View is wider than camera preview
-            // Scale height up to maintain aspect ratio and crop overflow on top/bottom
-            scaleX = 1.0f
-            scaleY = (viewWidth / imageRatio) / viewHeight
-        }
+        // CenterCrop scaling: scale up so both dimensions cover the view, cropping the excess
+        val scale = maxOf(viewWidth.toFloat() / bufferW, viewHeight.toFloat() / bufferH)
+        val scaleX = scale * bufferW / viewWidth.toFloat()
+        val scaleY = scale * bufferH / viewHeight.toFloat()
 
         val matrix = Matrix()
         val centerX = viewWidth / 2f
@@ -278,7 +272,7 @@ class Camera2Manager(
 
         ScanLog.i(
             TAG,
-            "configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, scale=(${scaleX}, ${scaleY})"
+            "configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, buffer=${bufferW}x${bufferH}, scale=(${scaleX}, ${scaleY})"
         )
 
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -577,6 +571,10 @@ class Camera2Manager(
                             return
                         }
                         captureSession = session
+                        val tv = textureView
+                        if (tv != null && tv.width > 0 && tv.height > 0) {
+                            configureTransform(tv.width, tv.height)
+                        }
                         applyZoom()
                         applyTorch()
                         applyExposure()
