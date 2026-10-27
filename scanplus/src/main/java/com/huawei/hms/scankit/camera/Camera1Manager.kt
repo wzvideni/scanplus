@@ -245,6 +245,49 @@ class Camera1Manager(
         }
     }
 
+    private fun configureTransform(viewWidth: Int, viewHeight: Int) {
+        val view = textureView ?: return
+        if (viewWidth == 0 || viewHeight == 0) return
+        if (previewSize.x == 0 || previewSize.y == 0) return
+
+        if (!com.huawei.hms.scankit.ScanPlusConfig.enableCenterCrop) {
+            view.setTransform(Matrix())
+            return
+        }
+
+        // In Camera1, cam.setDisplayOrientation(finalOrientation) has ALREADY rotated
+        // the hardware stream. If finalOrientation is perpendicular (90 or 270), the buffer
+        // arriving at TextureView has width = minOf(previewSize) and height = maxOf(previewSize).
+        // If parallel (0 or 180), buffer has width = maxOf(previewSize) and height = minOf(previewSize).
+        val finalOrientation = getEffectiveDisplayOrientation()
+        val isPerpendicular = (finalOrientation % 180 != 0)
+        val bufferW = if (isPerpendicular) minOf(previewSize.x, previewSize.y).toFloat() else maxOf(previewSize.x, previewSize.y).toFloat()
+        val bufferH = if (isPerpendicular) maxOf(previewSize.x, previewSize.y).toFloat() else minOf(previewSize.x, previewSize.y).toFloat()
+
+        // Calculate uniform CenterCrop scaling to prevent aspect ratio distortion
+        val scale = maxOf(viewWidth.toFloat() / bufferW, viewHeight.toFloat() / bufferH)
+        val scaleX = scale * bufferW / viewWidth.toFloat()
+        val scaleY = scale * bufferH / viewHeight.toFloat()
+
+        val matrix = Matrix()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        matrix.setScale(scaleX, scaleY, centerX, centerY)
+
+        ScanLog.i(
+            TAG,
+            "Camera1 configureTransform CenterCrop: view=${viewWidth}x${viewHeight}, preview=${previewSize.x}x${previewSize.y}, finalOrientation=$finalOrientation, buffer=${bufferW}x${bufferH}, scale=(${scaleX}, ${scaleY})"
+        )
+
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            view.setTransform(matrix)
+        } else {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                view.setTransform(matrix)
+            }
+        }
+    }
+
     @Synchronized
     override fun attachTextureView(view: TextureView) {
         this.textureView = view
@@ -257,6 +300,18 @@ class Camera1Manager(
                 cam.setDisplayOrientation(finalOrientation)
             } catch (e: Exception) {
                 ScanLog.e(TAG, "setPreviewTexture failed", e)
+            }
+        }
+        if (view.width > 0 && view.height > 0) {
+            configureTransform(view.width, view.height)
+        }
+        view.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            val w = right - left
+            val h = bottom - top
+            val oldW = oldRight - oldLeft
+            val oldH = oldBottom - oldTop
+            if (w > 0 && h > 0 && (w != oldW || h != oldH)) {
+                configureTransform(w, h)
             }
         }
     }
@@ -289,6 +344,10 @@ class Camera1Manager(
             cam.startPreview()
             isPreviewing = true
             ScanLog.i(TAG, "Camera1 preview started successfully")
+            val tv = textureView
+            if (tv != null && tv.width > 0 && tv.height > 0) {
+                configureTransform(tv.width, tv.height)
+            }
         } catch (e: Exception) {
             ScanLog.e(TAG, "startPreview failed", e)
             onCameraError?.invoke(e)
@@ -593,6 +652,10 @@ class Camera1Manager(
         try {
             val finalOrientation = getEffectiveDisplayOrientation(degrees)
             camera?.setDisplayOrientation(finalOrientation)
+            val tv = textureView
+            if (tv != null && tv.width > 0 && tv.height > 0) {
+                configureTransform(tv.width, tv.height)
+            }
         } catch (e: Exception) {
             ScanLog.w(TAG, "setDisplayOrientation error", e)
         }

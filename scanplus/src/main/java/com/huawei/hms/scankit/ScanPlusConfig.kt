@@ -20,6 +20,14 @@ object ScanPlusConfig {
     var cameraMode: CameraMode = CameraMode.AUTO
 
     /**
+     * Whether to automatically apply CenterCrop aspect ratio adaptation on TextureView.
+     * When true (default), TextureView scales preview frames proportionally to completely prevent
+     * vertical or horizontal image stretching.
+     */
+    @JvmStatic
+    var enableCenterCrop: Boolean = true
+
+    /**
      * Controls whether verbose debug and info logging is enabled.
      * Default: false (silences high-frequency camera, preview, and decode logs).
      * Set to true to output verbose diagnostic logs in Logcat.
