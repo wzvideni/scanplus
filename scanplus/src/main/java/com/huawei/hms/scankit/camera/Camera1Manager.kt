@@ -10,6 +10,7 @@ import android.hardware.Camera
 import android.os.Build
 import android.util.Range
 import android.view.TextureView
+import android.view.View
 import com.huawei.hms.scankit.p.k0
 import com.huawei.hms.scankit.util.ScanLog
 import java.io.IOException
@@ -245,12 +246,37 @@ class Camera1Manager(
         }
     }
 
+    private fun getCumulativeRotation(view: View): Float {
+        var rot = 0f
+        var current: View? = view
+        while (current != null) {
+            rot += current.rotation
+            val parent = current.parent
+            current = parent as? View
+        }
+        return ((rot % 360f) + 360f) % 360f
+    }
+
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
         val view = textureView ?: return
         if (viewWidth == 0 || viewHeight == 0) return
         if (previewSize.x == 0 || previewSize.y == 0) return
 
         if (!com.huawei.hms.scankit.ScanPlusConfig.enableCenterCrop) {
+            view.setTransform(Matrix())
+            return
+        }
+
+        // If the view or any parent layout has a manual view rotation (e.g. view.rotation = 270f),
+        // bypass the CenterCrop matrix transform and leave TextureView with an identity Matrix.
+        // This guarantees 100% exact parity with the original scanplus-2.15.0.301.aar behavior
+        // for projects that solved orientation by rotating views in layout or code.
+        val cumulativeRotation = getCumulativeRotation(view)
+        if (cumulativeRotation != 0f) {
+            ScanLog.i(
+                TAG,
+                "Camera1: View or parent has manual rotation (${cumulativeRotation}°), bypassing CenterCrop to preserve 100% legacy AAR behavior"
+            )
             view.setTransform(Matrix())
             return
         }
